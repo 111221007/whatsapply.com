@@ -195,18 +195,27 @@ class SafeWhatsAppBot {
         // API endpoints
         this.app.post('/api/send-message', async (req, res) => {
             try {
+                console.log(`📮 [API] send-message request received:`, {
+                    body: req.body,
+                    numberType: typeof req.body?.number,
+                    messageType: typeof req.body?.message,
+                    timestamp: new Date().toISOString()
+                });
+                
                 const { number, message, priority } = req.body;
                 
-                if (!number || !message) {
+                if (!number || !message || number === 'undefined' || message === 'undefined') {
+                    console.error(`❌ [API] Invalid request data:`, { number, message, priority });
                     return res.status(400).json({ 
                         success: false, 
-                        error: 'Number and message are required' 
+                        error: 'Number and message are required and cannot be undefined' 
                     });
                 }
 
                 const result = await this.queueMessage(number, message, priority);
                 res.json(result);
             } catch (error) {
+                console.error(`❌ [API] send-message error:`, error.message);
                 res.status(500).json({ 
                     success: false, 
                     error: error.message 
@@ -354,6 +363,17 @@ class SafeWhatsAppBot {
     async queueMessage(number, message, priority = 'normal') {
         const queueTime = new Date().toLocaleTimeString();
         console.log(`📥 [QUEUE] queueMessage called at ${queueTime} for ${number}, priority: ${priority}`);
+        
+        // Validate inputs
+        if (!number || number === 'undefined' || typeof number !== 'string') {
+            console.error(`❌ [QUEUE] Invalid number input: ${number} (type: ${typeof number})`);
+            throw new Error('Invalid phone number: number is required and must be a string');
+        }
+        
+        if (!message || message === 'undefined' || typeof message !== 'string') {
+            console.error(`❌ [QUEUE] Invalid message input: ${message} (type: ${typeof message})`);
+            throw new Error('Invalid message: message is required and must be a string');
+        }
         
         // Validate number format
         const formattedNumber = this.formatPhoneNumber(number);
@@ -593,26 +613,42 @@ class SafeWhatsAppBot {
     async isValidWhatsAppUser(number) {
         try {
             // If not connected, skip WhatsApp validation and just validate format
-            if (!this.isConnected) {
+            if (!this.isConnected || !this.client) {
+                console.log(`⚠️ [VALIDATION] WhatsApp not connected, allowing number: ${number}`);
                 return true; // Allow format-valid numbers when not connected
             }
+            
+            console.log(`🔍 [VALIDATION] Checking WhatsApp registration for: ${number}`);
             const numberId = await this.client.getNumberId(number);
-            return numberId !== null;
+            const isValid = numberId !== null && numberId !== undefined;
+            console.log(`✅ [VALIDATION] Result for ${number}: ${isValid ? 'VALID' : 'INVALID'}`);
+            return isValid;
         } catch (error) {
+            console.error(`❌ [VALIDATION] Error checking WhatsApp user ${number}:`, error.message);
+            // If there's an error checking, allow the number (fail-safe approach)
             return true;
         }
     }
 
     formatPhoneNumber(number) {
+        // Handle undefined, null, or non-string inputs
+        if (!number || typeof number !== 'string') {
+            console.error(`❌ [FORMAT] Invalid input for phone number: ${number} (type: ${typeof number})`);
+            return null;
+        }
+        
         // Remove all non-numeric characters
         const cleaned = number.replace(/\D/g, '');
         
         // Basic validation
         if (cleaned.length < 10 || cleaned.length > 15) {
+            console.error(`❌ [FORMAT] Invalid phone number length: ${cleaned.length} digits for number: ${cleaned}`);
             return null;
         }
         
-        return cleaned + '@c.us';
+        const formatted = cleaned + '@c.us';
+        console.log(`✅ [FORMAT] Successfully formatted: ${number} -> ${formatted}`);
+        return formatted;
     }
 
     updateStats() {

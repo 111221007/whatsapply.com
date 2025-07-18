@@ -297,14 +297,14 @@
 
         <!-- QR Code Instructions Banner -->
         <div id="qr-instructions-banner" class="alert alert-info" style="
-            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); 
-            color: white; 
+            background: white; 
+            color: red; 
             padding: 20px; 
             margin: 0; 
             text-align: center; 
             font-size: 16px; 
             font-weight: bold;
-            border: none;
+            border: 2px solid red;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             display: none;
         ">
@@ -1322,10 +1322,30 @@
         addLog('🌐 Web interface loaded. Connecting to bot...', 'info');
         
         // Show QR instructions banner initially (will be hidden if connected)
-        updateWhatsAppStatus('disconnected');
+        updateWhatsAppStatus('loading');
         
         // Start connection monitoring and auto QR display
         startConnectionMonitoring();
+        
+        // Immediate status check instead of waiting 5 seconds
+        setTimeout(async () => {
+            try {
+                const response = await fetch('/api/debug-status');
+                const data = await response.json();
+                
+                if (data.connection.isConnected) {
+                    updateWhatsAppStatus('connected');
+                } else if (data.connection.clientState === 'qr_received') {
+                    updateWhatsAppStatus('connecting');
+                    await autoDisplayQRCode();
+                } else {
+                    updateWhatsAppStatus('disconnected');
+                }
+            } catch (error) {
+                console.error('Initial status check error:', error);
+                updateWhatsAppStatus('disconnected');
+            }
+        }, 500); // Quick initial check
         
         // Initial check for auto QR display
         setTimeout(autoDisplayQRCode, 2000);
