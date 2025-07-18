@@ -549,7 +549,7 @@ app.get('/api/test-message/:number/:message', async (req, res) => {
     }
 });
 
-const PORT = 3002;
+const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {
-    console.log(`🌐 Debug server running on http://localhost:${PORT}`);
+    console.log(`🌐 Debug server running on port ${PORT}`);
 });
