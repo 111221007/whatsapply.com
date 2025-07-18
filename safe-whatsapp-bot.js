@@ -89,19 +89,17 @@ class SafeWhatsAppBot {
 
     setupEventHandlers() {
         this.client.on('qr', (qr) => {
-            console.log('QR Code received');
+            console.log('[STATUS] QR code received. Scan to connect WhatsApp.');
             this.broadcastToClients('qr', { qr });
         });
-
         this.client.on('authenticated', () => {
-            console.log('WhatsApp authenticated successfully');
+            console.log('[STATUS] WhatsApp authenticated.');
             this.broadcastToClients('authenticated', { status: 'authenticated' });
         });
-
         this.client.on('ready', async () => {
-            console.log('WhatsApp client is ready');
             this.isConnected = true;
             const info = this.client.info;
+            console.log('[STATUS] WhatsApp connected.');
             this.broadcastToClients('ready', { 
                 status: 'ready', 
                 info: {
@@ -112,13 +110,11 @@ class SafeWhatsAppBot {
             });
             this.startMessageProcessor();
         });
-
         this.client.on('disconnected', (reason) => {
-            console.log('WhatsApp disconnected:', reason);
             this.isConnected = false;
+            console.log('[STATUS] WhatsApp disconnected. Reason:', reason);
             this.broadcastToClients('disconnected', { reason });
         });
-
         this.client.on('message', (message) => {
             this.broadcastToClients('message_received', {
                 from: message.from,
@@ -136,59 +132,57 @@ class SafeWhatsAppBot {
         this.app.use(express.static(path.join(__dirname, 'public')));
         this.app.use(express.json());
 
-        // API Routes
-        this.app.get('/api/status', (req, res) => {
-            res.json({
-                connected: this.isConnected,
-                stats: this.stats,
-                queueLength: this.messageQueue.length,
-                processing: this.isProcessing
+        try {
+            this.client = new Client({
+                authStrategy: new LocalAuth({ clientId: 'safe-bot' }),
+                puppeteer: { 
+                    headless: process.env.NODE_ENV === 'production' ? true : false,
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-gpu'
+                    ]
+                }
             });
-        });
-
-        this.app.post('/api/send-message', async (req, res) => {
-            try {
-                const { number, message, priority = 'normal' } = req.body;
-                
-                if (!number || !message) {
-                    return res.status(400).json({ error: 'Number and message are required' });
-                }
-
-                const result = await this.queueMessage(number, message, priority);
-                res.json(result);
+            this.setupEventHandlers();
+            const initTimeout = setTimeout(() => {
+                console.log('[STATUS] WhatsApp initialization taking longer than expected...');
+                this.broadcastToClients('status', { 
+                    message: 'WhatsApp initialization in progress...',
+                    status: 'initializing'
+                });
+            }, 30000); // 30 seconds
+            await this.client.initialize();
+            clearTimeout(initTimeout);
+            console.log('[STATUS] WhatsApp client initialization completed');
+        } catch (error) {
+            console.error('[ERROR] WhatsApp initialization error:', error);
+            this.broadcastToClients('error', { 
+                message: 'Failed to initialize WhatsApp client',
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+        }
+                            message: m.message ? m.message.substring(0, 50) + '...' : 'no message',
+                            status: m.status,
+                            retries: m.retries,
+                            queuedAt: m.queuedAt
+                        }))
+                    },
+                    stats: this.stats,
+                    rateLimiter: this.rateLimiter
+                };
+                res.json(response);
             } catch (error) {
+                console.error('Debug status error:', error);
                 res.status(500).json({ error: error.message });
             }
         });
-
-        this.app.post('/api/validate-number', async (req, res) => {
-            try {
-                const { number } = req.body;
-                const isValid = await this.isValidWhatsAppUser(number);
-                res.json({ valid: isValid });
-            } catch (error) {
-                res.status(500).json({ error: error.message });
-            }
-        });
-
-        this.app.get('/api/contacts', async (req, res) => {
-            try {
-                if (!this.isConnected) {
-                    return res.status(400).json({ error: 'WhatsApp not connected' });
-                }
-                const contacts = await this.client.getContacts();
-                res.json(contacts.slice(0, 100)); // Limit to first 100
-            } catch (error) {
-                res.status(500).json({ error: error.message });
-            }
-        });
-
-        // Force start message processing
-        this.app.post('/api/start-processing', (req, res) => {
-            if (!this.isConnected) {
-                return res.status(400).json({ error: 'WhatsApp not connected' });
-            }
-            
             if (this.messageQueue.length === 0) {
                 return res.json({ message: 'No messages in queue' });
             }
@@ -222,52 +216,40 @@ class SafeWhatsAppBot {
                         isProcessing: this.isProcessing,
                         queueLength: this.messageQueue.length,
                         messagesInQueue: this.messageQueue.map(m => ({
-                            number: m.number,
-                            message: m.message ? m.message.substring(0, 50) + '...' : 'no message',
-                            status: m.status,
-                            retries: m.retries,
-                            queuedAt: m.queuedAt
-                        }))
-                    },
-                    stats: this.stats,
-                    rateLimiter: this.rateLimiter
-                };
-                
-                res.json(response);
-            } catch (error) {
-                console.error('Debug status error:', error);
-                res.status(500).json({ error: error.message });
-            }
-        });
-
-        // Quick test endpoint
-        this.app.get('/api/test-message/:number/:message', async (req, res) => {
-            const number = req.params.number;
-            const message = decodeURIComponent(req.params.message);
+        try {
+            this.client = new Client({
+                authStrategy: new LocalAuth({ clientId: 'safe-bot' }),
+                puppeteer: { 
+                    headless: process.env.NODE_ENV === 'production' ? true : false,
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+            this.setupEventHandlers();
+            const initTimeout = setTimeout(() => {
+                console.log('[STATUS] WhatsApp initialization taking longer than expected...');
+                this.broadcastToClients('status', { 
+                    message: 'WhatsApp initialization in progress...',
+                    status: 'initializing'
+                });
+            }, 30000); // 30 seconds
+            await this.client.initialize();
+            clearTimeout(initTimeout);
+            console.log('[STATUS] WhatsApp client initialization completed');
+                    status: 'initializing'
+                });
+            }, 30000); // 30 seconds
             
-            console.log(`🌐 HTTP test message request: ${number} -> ${message}`);
-            
-            try {
-                await this.queueMessage(number, message);
-                res.json({ success: true, message: 'Message queued for testing' });
-            } catch (error) {
-                console.error('❌ HTTP queue error:', error);
-                res.status(500).json({ success: false, error: error.message });
-            }
-        });
-
-        // Socket.IO for real-time updates
-        console.log('🔌 Setting up Socket.IO...');
-        this.io.on('connection', (socket) => {
-            console.log('🔗 Client connected to web interface');
-            
-            // Send current status immediately
-            socket.emit('status', {
-                connected: this.isConnected,
-                stats: this.stats,
-                queueLength: this.messageQueue.length,
-                processing: this.isProcessing
+            await this.client.initialize();
+            clearTimeout(initTimeout);
+            console.log('[STATUS] WhatsApp client initialization completed');
+        } catch (error) {
+            console.error('[ERROR] WhatsApp initialization error:', error);
+            this.broadcastToClients('error', { 
+                message: 'Failed to initialize WhatsApp client',
+                error: error.message,
+                timestamp: new Date().toISOString()
             });
+        }
 
             socket.on('disconnect', () => {
                 console.log('🔌 Client disconnected from web interface');
@@ -552,18 +534,11 @@ class SafeWhatsAppBot {
         try {
             // If not connected, skip WhatsApp validation and just validate format
             if (!this.isConnected) {
-                console.log(`⚠️ [VALIDATION] WhatsApp not connected, skipping user validation for ${number}`);
                 return true; // Allow format-valid numbers when not connected
             }
-            
             const numberId = await this.client.getNumberId(number);
-            const isValid = numberId !== null;
-            console.log(`🔍 [VALIDATION] WhatsApp user check for ${number}: ${isValid ? 'Valid' : 'Invalid'}`);
-            return isValid;
+            return numberId !== null;
         } catch (error) {
-            console.error('Error validating number:', error);
-            // If validation fails due to error, be lenient and allow the number
-            console.log(`⚠️ [VALIDATION] Validation error for ${number}, allowing due to error: ${error.message}`);
             return true;
         }
     }
