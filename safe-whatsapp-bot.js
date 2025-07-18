@@ -132,57 +132,62 @@ class SafeWhatsAppBot {
         this.app.use(express.static(path.join(__dirname, 'public')));
         this.app.use(express.json());
 
-        try {
-            this.client = new Client({
-                authStrategy: new LocalAuth({ clientId: 'safe-bot' }),
-                puppeteer: { 
-                    headless: process.env.NODE_ENV === 'production' ? true : false,
-                    args: [
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-accelerated-2d-canvas',
-                        '--no-first-run',
-                        '--no-zygote',
-                        '--single-process',
-                        '--disable-gpu'
-                    ]
+        // API endpoints
+        this.app.post('/api/send-message', async (req, res) => {
+            try {
+                const { number, message, priority } = req.body;
+                
+                if (!number || !message) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'Number and message are required' 
+                    });
                 }
-            });
-            this.setupEventHandlers();
-            const initTimeout = setTimeout(() => {
-                console.log('[STATUS] WhatsApp initialization taking longer than expected...');
-                this.broadcastToClients('status', { 
-                    message: 'WhatsApp initialization in progress...',
-                    status: 'initializing'
-                });
-            }, 30000); // 30 seconds
-            await this.client.initialize();
-            clearTimeout(initTimeout);
-            console.log('[STATUS] WhatsApp client initialization completed');
-        } catch (error) {
-            console.error('[ERROR] WhatsApp initialization error:', error);
-            this.broadcastToClients('error', { 
-                message: 'Failed to initialize WhatsApp client',
-                error: error.message,
-                timestamp: new Date().toISOString()
-            });
-        }
-                            message: m.message ? m.message.substring(0, 50) + '...' : 'no message',
-                            status: m.status,
-                            retries: m.retries,
-                            queuedAt: m.queuedAt
-                        }))
-                    },
-                    stats: this.stats,
-                    rateLimiter: this.rateLimiter
-                };
-                res.json(response);
+
+                const result = await this.queueMessage(number, message, priority);
+                res.json(result);
             } catch (error) {
-                console.error('Debug status error:', error);
-                res.status(500).json({ error: error.message });
+                res.status(500).json({ 
+                    success: false, 
+                    error: error.message 
+                });
             }
         });
+
+        this.app.post('/api/validate-number', async (req, res) => {
+            try {
+                const { number } = req.body;
+                
+                if (!number) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'Number is required' 
+                    });
+                }
+
+                const formattedNumber = this.formatPhoneNumber(number);
+                if (!formattedNumber) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'Invalid phone number format' 
+                    });
+                }
+
+                const isValid = await this.isValidWhatsAppUser(formattedNumber);
+                res.json({ 
+                    success: true, 
+                    valid: isValid,
+                    formattedNumber: formattedNumber
+                });
+            } catch (error) {
+                res.status(500).json({ 
+                    success: false, 
+                    error: error.message 
+                });
+            }
+        });
+
+        this.app.post('/api/process-queue', (req, res) => {
             if (this.messageQueue.length === 0) {
                 return res.json({ message: 'No messages in queue' });
             }
@@ -216,40 +221,35 @@ class SafeWhatsAppBot {
                         isProcessing: this.isProcessing,
                         queueLength: this.messageQueue.length,
                         messagesInQueue: this.messageQueue.map(m => ({
-        try {
-            this.client = new Client({
-                authStrategy: new LocalAuth({ clientId: 'safe-bot' }),
-                puppeteer: { 
-                    headless: process.env.NODE_ENV === 'production' ? true : false,
-                    args: [
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-            this.setupEventHandlers();
-            const initTimeout = setTimeout(() => {
-                console.log('[STATUS] WhatsApp initialization taking longer than expected...');
-                this.broadcastToClients('status', { 
-                    message: 'WhatsApp initialization in progress...',
-                    status: 'initializing'
-                });
-            }, 30000); // 30 seconds
-            await this.client.initialize();
-            clearTimeout(initTimeout);
-            console.log('[STATUS] WhatsApp client initialization completed');
-                    status: 'initializing'
-                });
-            }, 30000); // 30 seconds
+                            id: m.id,
+                            number: m.number,
+                            message: m.message ? m.message.substring(0, 50) + '...' : 'no message',
+                            status: m.status,
+                            retries: m.retries,
+                            queuedAt: m.queuedAt
+                        }))
+                    },
+                    stats: this.stats,
+                    rateLimiter: this.rateLimiter
+                };
+                res.json(response);
+            } catch (error) {
+                console.error('Debug status error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        // Socket.IO connection handling
+        this.io.on('connection', (socket) => {
+            console.log('🔌 Client connected to web interface');
             
-            await this.client.initialize();
-            clearTimeout(initTimeout);
-            console.log('[STATUS] WhatsApp client initialization completed');
-        } catch (error) {
-            console.error('[ERROR] WhatsApp initialization error:', error);
-            this.broadcastToClients('error', { 
-                message: 'Failed to initialize WhatsApp client',
-                error: error.message,
-                timestamp: new Date().toISOString()
+            // Send current status to new clients
+            socket.emit('status_update', {
+                isConnected: this.isConnected,
+                queueLength: this.messageQueue.length,
+                isProcessing: this.isProcessing,
+                stats: this.stats
             });
-        }
 
             socket.on('disconnect', () => {
                 console.log('🔌 Client disconnected from web interface');
@@ -354,7 +354,7 @@ class SafeWhatsAppBot {
             console.log(`📬 [QUEUE] Added NORMAL priority message to end of queue at ${new Date().toLocaleTimeString()}`);
         }
 
-        console.log(`� [QUEUE] Queue status at ${new Date().toLocaleTimeString()}: Length=${this.messageQueue.length}, Processing=${this.isProcessing}, Connected=${this.isConnected}`);
+        console.log(`📊 [QUEUE] Queue status at ${new Date().toLocaleTimeString()}: Length=${this.messageQueue.length}, Processing=${this.isProcessing}, Connected=${this.isConnected}`);
 
         this.broadcastToClients('message_queued', messageObj);
         
