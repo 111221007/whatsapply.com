@@ -294,6 +294,27 @@
             <h1>🚀 Safe WhatsApp Bot Control Panel</h1>
             <p>Automated WhatsApp messaging with built-in safety controls</p>
         </div>
+
+        <!-- QR Code Instructions Banner -->
+        <div id="qr-instructions-banner" class="alert alert-info" style="
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); 
+            color: white; 
+            padding: 20px; 
+            margin: 0; 
+            text-align: center; 
+            font-size: 16px; 
+            font-weight: bold;
+            border: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            display: none;
+        ">
+            <div style="margin-bottom: 10px;">
+                📱 <span style="font-size: 18px;">Scan QR Code with WhatsApp</span>
+            </div>
+            <div style="font-size: 14px; font-weight: normal; opacity: 0.9;">
+                Open WhatsApp → Settings → Linked Devices → Link a Device
+            </div>
+        </div>
         
         <!-- WhatsApp Connection Section - Moved to top -->
         <div class="card" style="margin-bottom: 20px; background: #e8f5e8; border: 2px solid #25d366;">
@@ -1124,6 +1145,7 @@
             const disconnectedControls = document.getElementById('disconnected-controls');
             const connectedControls = document.getElementById('connected-controls');
             const qrContainer = document.getElementById('qr-container');
+            const qrBanner = document.getElementById('qr-instructions-banner');
 
             switch (status) {
                 case 'connected':
@@ -1133,6 +1155,7 @@
                     disconnectedControls.style.display = 'none';
                     connectedControls.style.display = 'block';
                     qrContainer.style.display = 'none';
+                    qrBanner.style.display = 'none'; // Hide QR instructions banner
                     break;
                 case 'connecting':
                     statusElement.textContent = 'Connecting...';
@@ -1140,6 +1163,7 @@
                     iconElement.textContent = '🔄';
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
+                    qrBanner.style.display = 'block'; // Show QR instructions banner
                     // QR container visibility handled by user action
                     break;
                 case 'disconnected':
@@ -1150,6 +1174,7 @@
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
                     qrContainer.style.display = 'none';
+                    qrBanner.style.display = 'block'; // Show QR instructions banner
                     break;
             }
         }
@@ -1228,6 +1253,9 @@
 
         // Initialize
         addLog('🌐 Web interface loaded. Connecting to bot...', 'info');
+        
+        // Show QR instructions banner initially (will be hidden if connected)
+        updateWhatsAppStatus('disconnected');
         
         // Start connection monitoring and auto QR display
         startConnectionMonitoring();
