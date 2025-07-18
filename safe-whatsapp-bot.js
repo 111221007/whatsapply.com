@@ -30,8 +30,11 @@ class SafeWhatsAppBot {
         console.log('📊 Configuration loaded');
         console.log('🌐 Setting up web server...');
         this.setupWebServer();
-        console.log('📱 Initializing WhatsApp...');
-        this.initializeWhatsApp();
+        console.log('📱 Starting WhatsApp initialization in background...');
+        // Start WhatsApp initialization asynchronously without blocking server startup
+        this.initializeWhatsApp().catch(error => {
+            console.error('❌ Failed to initialize WhatsApp:', error);
+        });
         console.log('✅ SafeWhatsAppBot constructor completed');
     }
 
@@ -58,11 +61,29 @@ class SafeWhatsAppBot {
             console.log('🔧 Setting up event handlers...');
             this.setupEventHandlers();
             console.log('🚀 Initializing WhatsApp client...');
+            
+            // Set a timeout to prevent Heroku from timing out
+            const initTimeout = setTimeout(() => {
+                console.log('⏰ WhatsApp initialization taking longer than expected...');
+                this.broadcastToClients('status', { 
+                    message: 'WhatsApp initialization in progress...',
+                    status: 'initializing'
+                });
+            }, 30000); // 30 seconds
+            
             await this.client.initialize();
+            clearTimeout(initTimeout);
             console.log('✅ WhatsApp client initialization completed');
         } catch (error) {
             console.error('❌ WhatsApp initialization error:', error);
-            this.broadcastToClients('error', { message: 'Failed to initialize WhatsApp client' });
+            // Don't crash the app, just log the error and continue
+            this.broadcastToClients('error', { 
+                message: 'Failed to initialize WhatsApp client',
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+            // Keep the server running even if WhatsApp fails
+            console.log('🔄 Server continues running despite WhatsApp error');
         }
     }
 
@@ -262,10 +283,20 @@ class SafeWhatsAppBot {
         });
 
         const PORT = process.env.PORT || 3001;
-        this.server.listen(PORT, () => {
-            console.log(`🌐 Web interface running on http://localhost:${PORT}`);
+        
+        // Add health check endpoint before starting WhatsApp client
+        this.app.get('/health', (req, res) => {
+            res.status(200).json({ 
+                status: 'ok', 
+                timestamp: new Date().toISOString(),
+                uptime: process.uptime()
+            });
+        });
+
+        this.server.listen(PORT, '0.0.0.0', () => {
+            console.log(`🌐 Web interface running on port ${PORT}`);
             console.log(`🔌 Socket.IO ready for connections`);
-            console.log(`📱 Open your browser to: http://localhost:${PORT}`);
+            console.log(`📱 Health check available at /health`);
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         });
 
