@@ -555,6 +555,28 @@
             hideQRCode();
         });
 
+        socket.on('session_restore', (data) => {
+            addLog('🔑 Restoring existing WhatsApp session...', 'info');
+            updateWhatsAppStatus('restoring');
+            showAlert('Found existing session - attempting to restore connection', 'info');
+        });
+
+        socket.on('session_new', (data) => {
+            addLog('🆕 New session required - waiting for QR code...', 'info');
+            updateWhatsAppStatus('new');
+        });
+
+        socket.on('loading', (data) => {
+            addLog(`📱 Loading WhatsApp: ${data.percent}% - ${data.message}`, 'info');
+            updateWhatsAppStatus('loading');
+        });
+
+        socket.on('auth_failure', (data) => {
+            addLog(`❌ Authentication failed: ${data.message}`, 'error');
+            updateWhatsAppStatus('auth_failed');
+            showAlert('Authentication failed - will need to scan QR code again', 'error');
+        });
+
         socket.on('ready', (data) => {
             connected = true;
             updateConnectionStatus(true);
@@ -569,8 +591,17 @@
             updateConnectionStatus(false);
             updateWhatsAppStatus('disconnected'); // Update WhatsApp status to disconnected
             addLog(`❌ WhatsApp disconnected: ${data.reason}`, 'error');
+            if (data.message) {
+                addLog(`🔄 ${data.message}`, 'info');
+            }
             sendBtn.disabled = true; // Disable the send button
-            showAlert('WhatsApp disconnected. Please refresh and scan QR code again.', 'error');
+            
+            // Provide different messages based on disconnection reason
+            if (data.reason === 'LOGOUT') {
+                showAlert('WhatsApp session logged out. Please scan QR code again.', 'warning');
+            } else {
+                showAlert('WhatsApp disconnected. Attempting automatic reconnection...', 'warning');
+            }
         });
 
         socket.on('message_queued', (message) => {
@@ -1156,6 +1187,42 @@
                     connectedControls.style.display = 'block';
                     qrContainer.style.display = 'none';
                     qrBanner.style.display = 'none'; // Hide QR instructions banner
+                    break;
+                case 'restoring':
+                    statusElement.textContent = 'Restoring Session...';
+                    statusElement.style.color = '#3498db';
+                    iconElement.textContent = '🔑';
+                    disconnectedControls.style.display = 'block';
+                    connectedControls.style.display = 'none';
+                    qrContainer.style.display = 'none';
+                    qrBanner.style.display = 'none'; // Don't show QR banner during session restore
+                    break;
+                case 'loading':
+                    statusElement.textContent = 'Loading WhatsApp...';
+                    statusElement.style.color = '#9b59b6';
+                    iconElement.textContent = '📱';
+                    disconnectedControls.style.display = 'block';
+                    connectedControls.style.display = 'none';
+                    qrContainer.style.display = 'none';
+                    qrBanner.style.display = 'none'; // Don't show QR banner during loading
+                    break;
+                case 'new':
+                    statusElement.textContent = 'New Session Required';
+                    statusElement.style.color = '#f39c12';
+                    iconElement.textContent = '🆕';
+                    disconnectedControls.style.display = 'block';
+                    connectedControls.style.display = 'none';
+                    qrContainer.style.display = 'none';
+                    qrBanner.style.display = 'block'; // Show QR instructions banner for new session
+                    break;
+                case 'auth_failed':
+                    statusElement.textContent = 'Authentication Failed';
+                    statusElement.style.color = '#e74c3c';
+                    iconElement.textContent = '🚫';
+                    disconnectedControls.style.display = 'block';
+                    connectedControls.style.display = 'none';
+                    qrContainer.style.display = 'none';
+                    qrBanner.style.display = 'block'; // Show QR instructions banner for failed auth
                     break;
                 case 'connecting':
                     statusElement.textContent = 'Connecting...';
