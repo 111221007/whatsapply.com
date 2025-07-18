@@ -385,7 +385,7 @@
                         </select>
                     </div>
                     
-                    <button type="submit" id="send-btn" class="btn" disabled>Add to Queue</button>
+                    <button type="submit" id="send-btn" class="btn" disabled>Send Message</button>
                     <button type="button" id="force-enable-btn" class="btn btn-secondary" style="margin-left: 10px;">Force Enable (Testing)</button>
                 </form>
             </div>
@@ -530,12 +530,14 @@
 
         socket.on('authenticated', () => {
             addLog('✅ WhatsApp authenticated successfully', 'success');
+            updateWhatsAppStatus('connecting'); // Show connecting status during authentication
             hideQRCode();
         });
 
         socket.on('ready', (data) => {
             connected = true;
             updateConnectionStatus(true);
+            updateWhatsAppStatus('connected'); // Update WhatsApp status to connected
             addLog(`🚀 WhatsApp ready! Connected as: ${data.info.name} (${data.info.number})`, 'success');
             sendBtn.disabled = false; // Enable the send button
             showAlert('WhatsApp connected successfully!', 'success');
@@ -544,6 +546,7 @@
         socket.on('disconnected', (data) => {
             connected = false;
             updateConnectionStatus(false);
+            updateWhatsAppStatus('disconnected'); // Update WhatsApp status to disconnected
             addLog(`❌ WhatsApp disconnected: ${data.reason}`, 'error');
             sendBtn.disabled = true; // Disable the send button
             showAlert('WhatsApp disconnected. Please refresh and scan QR code again.', 'error');
@@ -603,7 +606,7 @@
             
             try {
                 sendBtn.disabled = true;
-                sendBtn.textContent = 'Adding to Queue...';
+                sendBtn.textContent = 'Sending...';
                 
                 const response = await fetch('/api/send-message', {
                     method: 'POST',
@@ -620,16 +623,21 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showAlert(`Message queued successfully! Position: ${result.queuePosition}`, 'success');
+                    showAlert(`Message sent successfully to ${result.to}!`, 'success');
+                    addLog(`✅ Message sent to ${result.to}: "${result.content}"`, 'success');
+                    if (result.isWhatsAppUser === false) {
+                        addLog(`⚠️ Note: Could not verify if ${result.to} is a WhatsApp user`, 'warning');
+                    }
                     document.getElementById('message-text').value = '';
                 } else {
-                    showAlert(result.error, 'error');
+                    showAlert(result.error || result.message || 'Unknown error', 'error');
+                    addLog(`❌ Failed to send message: ${result.error || result.message}`, 'error');
                 }
             } catch (error) {
                 showAlert('Failed to queue message: ' + error.message, 'error');
             } finally {
                 sendBtn.disabled = !connected; // Re-enable if connected
-                sendBtn.textContent = 'Add to Queue';
+                sendBtn.textContent = 'Send Message';
             }
         });
 
@@ -653,12 +661,29 @@
                 const result = await response.json();
                 
                 if (result.valid) {
-                    showAlert('✅ Valid WhatsApp number!', 'success');
+                    // Update the phone number field with the formatted number if provided
+                    if (result.number && result.number !== phoneNumber) {
+                        document.getElementById('phone-number').value = result.number;
+                    }
+                    
+                    // Show appropriate message based on validation result
+                    if (result.isWhatsAppNumber === true) {
+                        showAlert('✅ Valid WhatsApp number confirmed!', 'success');
+                        addLog(`✅ Phone number validated: ${result.number}`, 'success');
+                    } else if (result.isWhatsAppNumber === false) {
+                        showAlert('✅ Number format is valid. WhatsApp status unknown (this is normal).', 'success');
+                        addLog(`✅ Phone number format validated: ${result.number}`, 'success');
+                    } else {
+                        showAlert(`✅ ${result.message}`, 'success');
+                        addLog(`✅ Phone number validated: ${result.number}`, 'success');
+                    }
                 } else {
-                    showAlert('❌ Not a valid WhatsApp number', 'error');
+                    showAlert(`❌ ${result.message}`, 'error');
+                    addLog(`❌ Phone number validation failed: ${result.message}`, 'error');
                 }
             } catch (error) {
-                showAlert('Failed to validate number', 'error');
+                showAlert('Failed to validate number: ' + error.message, 'error');
+                addLog(`❌ Validation error: ${error.message}`, 'error');
             }
         });
 

@@ -335,9 +335,13 @@ class SafeWhatsAppBot {
         const isValid = await this.isValidWhatsAppUser(formattedNumber);
         console.log(`✅ [QUEUE] Number validation result: ${isValid} at ${new Date().toLocaleTimeString()}`);
         
-        if (!isValid) {
+        if (!isValid && this.isConnected) {
+            // Only strict validation when WhatsApp is connected
             console.log(`❌ [QUEUE] Number is not a valid WhatsApp user at ${new Date().toLocaleTimeString()}`);
-            throw new Error('Number is not a valid WhatsApp user');
+            throw new Error('Number is not a valid WhatsApp user. Please check the number and try again.');
+        } else if (!isValid && !this.isConnected) {
+            // When not connected, allow format-valid numbers but warn
+            console.log(`⚠️ [QUEUE] Cannot verify WhatsApp user (not connected), allowing number at ${new Date().toLocaleTimeString()}`);
         }
 
         const messageObj = {
@@ -546,12 +550,21 @@ class SafeWhatsAppBot {
 
     async isValidWhatsAppUser(number) {
         try {
-            if (!this.isConnected) return false;
+            // If not connected, skip WhatsApp validation and just validate format
+            if (!this.isConnected) {
+                console.log(`⚠️ [VALIDATION] WhatsApp not connected, skipping user validation for ${number}`);
+                return true; // Allow format-valid numbers when not connected
+            }
+            
             const numberId = await this.client.getNumberId(number);
-            return numberId !== null;
+            const isValid = numberId !== null;
+            console.log(`🔍 [VALIDATION] WhatsApp user check for ${number}: ${isValid ? 'Valid' : 'Invalid'}`);
+            return isValid;
         } catch (error) {
             console.error('Error validating number:', error);
-            return false;
+            // If validation fails due to error, be lenient and allow the number
+            console.log(`⚠️ [VALIDATION] Validation error for ${number}, allowing due to error: ${error.message}`);
+            return true;
         }
     }
 

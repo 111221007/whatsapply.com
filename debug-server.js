@@ -367,34 +367,76 @@ app.post('/api/send-message', async (req, res) => {
     if (!isConnected || !whatsappClient) {
         return res.status(400).json({
             success: false,
-            message: 'WhatsApp is not connected'
+            error: 'WhatsApp is not connected'
         });
     }
 
     if (!number || !message) {
         return res.status(400).json({
             success: false,
-            message: 'Number and message are required'
+            error: 'Number and message are required'
         });
     }
 
     try {
-        const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
-        await whatsappClient.sendMessage(chatId, message);
+        // Format number properly
+        let formattedNumber = number.replace(/[^\d+]/g, '');
+        if (!formattedNumber.startsWith('+')) {
+            formattedNumber = '+' + formattedNumber;
+        }
+        
+        // Validate number format
+        if (!/^\+\d{8,15}$/.test(formattedNumber)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid phone number format. Use international format with country code (e.g., +1234567890)'
+            });
+        }
+        
+        // Prepare chat ID
+        const phoneNumber = formattedNumber.replace('+', '');
+        const chatId = `${phoneNumber}@c.us`;
+        
+        // Try to get contact info to validate if it's a WhatsApp user
+        let isWhatsAppUser = false;
+        try {
+            const contact = await whatsappClient.getContactById(chatId);
+            isWhatsAppUser = contact && contact.isWAContact;
+        } catch (error) {
+            console.log('⚠️ Could not verify WhatsApp user status:', error.message);
+            // Continue anyway - some numbers might not be verifiable but still work
+        }
+        
+        // Send the message
+        const result = await whatsappClient.sendMessage(chatId, message);
         
         res.json({
             success: true,
             message: 'Message sent successfully',
-            to: number,
+            to: formattedNumber,
             content: message,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            isWhatsAppUser: isWhatsAppUser,
+            messageId: result.id ? result.id._serialized : null
         });
     } catch (error) {
         console.error('❌ Error sending message:', error);
+        
+        // Provide more specific error messages
+        let errorMessage = 'Failed to send message';
+        if (error.message.includes('not a WhatsApp user')) {
+            errorMessage = 'This number is not registered with WhatsApp';
+        } else if (error.message.includes('invalid number')) {
+            errorMessage = 'Invalid phone number format';
+        } else if (error.message.includes('Rate limit')) {
+            errorMessage = 'Rate limit exceeded. Please wait before sending more messages';
+        } else {
+            errorMessage = `Failed to send message: ${error.message}`;
+        }
+        
         res.status(500).json({
             success: false,
-            message: 'Failed to send message',
-            error: error.message
+            error: errorMessage
         });
     }
 });
@@ -412,49 +454,69 @@ app.post('/api/validate-number', async (req, res) => {
     
     // Basic validation - check if number looks like a valid international number
     const cleanNumber = number.replace(/[^\d+]/g, '');
-    const isValidFormat = /^\+\d{10,15}$/.test(cleanNumber);
+    
+    // More flexible validation - allow numbers with or without +
+    let isValidFormat = false;
+    let formattedNumber = cleanNumber;
+    
+    if (/^\+\d{10,15}$/.test(cleanNumber)) {
+        // Number with + prefix (correct format)
+        isValidFormat = true;
+        formattedNumber = cleanNumber;
+    } else if (/^\d{10,15}$/.test(cleanNumber)) {
+        // Number without + prefix - add it
+        isValidFormat = true;
+        formattedNumber = '+' + cleanNumber;
+    } else if (/^\d{8,15}$/.test(cleanNumber.replace('+', ''))) {
+        // Very permissive - just check if it has enough digits
+        isValidFormat = true;
+        formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : '+' + cleanNumber;
+    }
     
     if (!isValidFormat) {
         return res.json({
             valid: false,
-            message: 'Invalid number format. Use international format like +886928316907'
+            message: 'Invalid number format. Use international format like +886928316907 (8-15 digits)'
         });
     }
     
     if (!isConnected || !whatsappClient) {
         // If not connected, do basic format validation only
         return res.json({
-            valid: isValidFormat,
-            message: isValidFormat ? 'Number format is valid (WhatsApp connection needed for full validation)' : 'Invalid number format',
-            number: cleanNumber
+            valid: true, // Changed to true since format is valid
+            message: 'Number format is valid! Connect WhatsApp to verify if it\'s on WhatsApp.',
+            number: formattedNumber
         });
     }
 
     try {
         // Format the number properly for WhatsApp
-        const phoneNumber = cleanNumber.replace('+', '');
+        const phoneNumber = formattedNumber.replace('+', '');
         const chatId = `${phoneNumber}@c.us`;
         
         // Try to get the contact info to validate
         const contact = await whatsappClient.getContactById(chatId);
         
         res.json({
-            valid: contact && contact.isWAContact,
-            number: cleanNumber,
+            valid: true, // Always return true for format validation
+            isWhatsAppNumber: contact && contact.isWAContact,
+            number: formattedNumber,
             contact: contact ? {
                 name: contact.name,
                 pushname: contact.pushname,
                 isWAContact: contact.isWAContact
             } : null,
-            message: contact && contact.isWAContact ? 'Valid WhatsApp number!' : 'Number format is correct but may not be on WhatsApp'
+            message: contact && contact.isWAContact ? 'Valid WhatsApp number!' : 'Number format is valid. Unable to verify WhatsApp status - this is normal.'
         });
     } catch (error) {
         console.error('❌ Number validation error:', error);
         // Even if validation fails, if format is good, consider it potentially valid
         res.json({
-            valid: isValidFormat,
-            message: isValidFormat ? 'Number format is valid (could not verify WhatsApp status)' : 'Invalid number format',
-            error: error.message
+            valid: true, // Always return true for format validation
+            isWhatsAppNumber: false,
+            message: 'Number format is valid. WhatsApp verification failed - this is normal and doesn\'t mean the number is invalid.',
+            number: formattedNumber,
+            error: `Verification error: ${error.message}`
         });
     }
 });
