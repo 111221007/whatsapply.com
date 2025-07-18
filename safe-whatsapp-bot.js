@@ -41,8 +41,17 @@ class SafeWhatsAppBot {
             this.client = new Client({
                 authStrategy: new LocalAuth({ clientId: 'safe-bot' }),
                 puppeteer: { 
-                    headless: false,
-                    args: ['--no-sandbox', '--disable-setuid-sandbox']
+                    headless: process.env.NODE_ENV === 'production' ? true : false,
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-gpu'
+                    ]
                 }
             });
 
