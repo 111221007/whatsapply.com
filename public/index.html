@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Safe WhatsApp Bot Control Panel</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: space-around;
+            background: #f8f9fa;
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .status-item {
+            text-align: center;
+            flex: 1;
+        }
+        
+        .status-item h3 {
+            color: #495057;
+            margin-bottom: 5px;
+        }
+        
+        .status-value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .connected { color: #28a745; }
+        .disconnected { color: #dc3545; }
+        .warning { color: #ffc107; }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border: 1px solid #e9ecef;
+        }
+        
+        .card h2 {
+            color: #495057;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+            outline: none;
+            border-color: #25D366;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+        
+        .qr-section {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .qr-code {
+            max-width: 250px;
+            margin: 0 auto;
+        }
+        
+        .logs {
+            height: 300px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-left: 3px solid transparent;
+        }
+        
+        .log-info { border-left-color: #007bff; }
+        .log-success { border-left-color: #28a745; }
+        .log-warning { border-left-color: #ffc107; }
+        .log-error { border-left-color: #dc3545; }
+        
+        .queue-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .queue-item.sent { border-left-color: #28a745; }
+        .queue-item.failed { border-left-color: #dc3545; }
+        .queue-item.processing { border-left-color: #ffc107; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .contacts-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+        }
+        
+        .contact-item {
+            padding: 10px;
+            border-bottom: 1px solid #e9ecef;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .contact-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .contact-item:last-child {
+            border-bottom: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #25D366, #128C7E);
+            transition: width 0.3s ease;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 20px;
+                padding: 20px;
+            }
+            
+            .status-bar {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+        
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        
+        .alert-warning {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Safe WhatsApp Bot Control Panel</h1>
+            <p>Automated WhatsApp messaging with built-in safety controls</p>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-item">
+                <h3>Connection</h3>
+                <div id="connection-status" class="status-value disconnected">Disconnected</div>
+            </div>
+            <div class="status-item">
+                <h3>Queue</h3>
+                <div id="queue-length" class="status-value">0</div>
+            </div>
+            <div class="status-item">
+                <h3>Today's Messages</h3>
+                <div id="daily-count" class="status-value">0</div>
+            </div>
+            <div class="status-item">
+                <h3>Rate (per min)</h3>
+                <div id="rate-count" class="status-value">0/15</div>
+            </div>
+        </div>
+        
+        <div id="qr-section" class="qr-section" style="display: none;">
+            <h3>📱 Scan QR Code with WhatsApp</h3>
+            <div id="qr-code" class="qr-code"></div>
+            <p>Open WhatsApp → Settings → Linked Devices → Link a Device</p>
+        </div>
+        
+        <div id="alerts"></div>
+        
+        <div class="main-content">
+            <div class="card">
+                <h2>📤 Send Message</h2>
+                <form id="message-form">
+                    <div class="form-group">
+                        <label for="phone-number">Phone Number (with country code)</label>
+                        <input type="tel" id="phone-number" placeholder="+1234567890" required>
+                        <button type="button" id="validate-number" class="btn btn-secondary" style="margin-top: 10px;">Validate Number</button>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="message-text">Message</label>
+                        <textarea id="message-text" rows="4" placeholder="Enter your message here..." required></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="priority">Priority</label>
+                        <select id="priority">
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" id="send-btn" class="btn" disabled>Add to Queue</button>
+                    <button type="button" id="force-enable-btn" class="btn btn-secondary" style="margin-left: 10px;">Force Enable (Testing)</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2>📊 Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div id="total-sent" class="stat-number">0</div>
+                        <div>Total Sent</div>
+                    </div>
+                    <div class="stat-card">
+                        <div id="success-rate" class="stat-number">100%</div>
+                        <div>Success Rate</div>
+                    </div>
+                </div>
+                
+                <h3>Daily Limit Progress</h3>
+                <div class="progress-bar">
+                    <div id="daily-progress" class="progress-fill" style="width: 0%"></div>
+                </div>
+                <p id="daily-progress-text">0 / 1000 messages</p>
+            </div>
+            
+            <div class="card">
+                <h2>📋 Message Queue</h2>
+                <button id="start-processing" class="btn btn-secondary" style="margin-bottom: 15px;">Start Processing Queue</button>
+                <div id="queue-container">
+                    <p>No messages in queue</p>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>📱 Contacts</h2>
+                <button id="load-contacts" class="btn">Load Contacts</button>
+                <div id="contacts-container" class="contacts-list" style="display: none;">
+                    <!-- Contacts will be loaded here -->
+                </div>
+            </div>
+            
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>🔧 Debug Monitor</h2>
+                <div class="debug-controls" style="margin-bottom: 15px;">
+                    <button id="refresh-debug" class="btn btn-secondary">🔄 Refresh Debug Info</button>
+                    <button id="test-message-btn" class="btn btn-secondary">🧪 Send Test Message</button>
+                    <input type="text" id="test-number" placeholder="+886928316907" value="+886928316907" style="margin: 5px; padding: 8px;">
+                    <input type="text" id="test-msg" placeholder="Test message" value="Debug test" style="margin: 5px; padding: 8px;">
+                </div>
+                <div class="debug-panel" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="debug-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                        <h4>🔗 Connection</h4>
+                        <div id="debug-connection">Loading...</div>
+                    </div>
+                    <div class="debug-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                        <h4>⚙️ Processing</h4>
+                        <div id="debug-processing">Loading...</div>
+                    </div>
+                    <div class="debug-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                        <h4>📬 Queue</h4>
+                        <div id="debug-queue">Loading...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>📝 Activity Logs</h2>
+                <div id="logs" class="logs">
+                    <div class="log-entry log-info">Bot initialized. Waiting for WhatsApp connection...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io({
+            timeout: 10000,
+            reconnection: true,
+            reconnectionDelay: 2000,
+            reconnectionAttempts: 10
+        });
+        
+        let connected = false;
+        let stats = { messagesSent: 0, dailyCount: 0, messagesPerMinute: 0 };
+        let queue = [];
+        let connectionAttempts = 0;
+        const maxAttempts = 10;
+
+        // DOM elements
+        const connectionStatus = document.getElementById('connection-status');
+        const queueLength = document.getElementById('queue-length');
+        const dailyCount = document.getElementById('daily-count');
+        const rateCount = document.getElementById('rate-count');
+        const qrSection = document.getElementById('qr-section');
+        const qrCode = document.getElementById('qr-code');
+        const messageForm = document.getElementById('message-form');
+        const sendBtn = document.getElementById('send-btn');
+        const logs = document.getElementById('logs');
+        const alerts = document.getElementById('alerts');
+        const queueContainer = document.getElementById('queue-container');
+
+        // Connection handling
+        socket.on('connect', () => {
+            connectionAttempts = 0;
+            addLog('✅ Connected to bot successfully!', 'success');
+            showAlert('Connected to bot!', 'success');
+        });
+
+        socket.on('disconnect', () => {
+            addLog('❌ Disconnected from bot', 'error');
+            updateConnectionStatus(false);
+        });
+
+        socket.on('connect_error', (error) => {
+            connectionAttempts++;
+            addLog(`❌ Connection attempt ${connectionAttempts}/${maxAttempts} failed`, 'error');
+            
+            if (connectionAttempts >= maxAttempts) {
+                addLog('❌ Max connection attempts reached. Please refresh page.', 'error');
+                showAlert('Connection failed. Please refresh the page.', 'error');
+            } else {
+                addLog(`🔄 Retrying connection in 2 seconds...`, 'info');
+            }
+        });
+
+        // Socket event handlers
+        socket.on('status', (data) => {
+            updateStatus(data);
+        });
+
+        socket.on('qr', (data) => {
+            showQRCode(data.qr);
+        });
+
+        socket.on('authenticated', () => {
+            addLog('✅ WhatsApp authenticated successfully', 'success');
+            hideQRCode();
+        });
+
+        socket.on('ready', (data) => {
+            connected = true;
+            updateConnectionStatus(true);
+            addLog(`🚀 WhatsApp ready! Connected as: ${data.info.name} (${data.info.number})`, 'success');
+            sendBtn.disabled = false; // Enable the send button
+            showAlert('WhatsApp connected successfully!', 'success');
+        });
+
+        socket.on('disconnected', (data) => {
+            connected = false;
+            updateConnectionStatus(false);
+            addLog(`❌ WhatsApp disconnected: ${data.reason}`, 'error');
+            sendBtn.disabled = true; // Disable the send button
+            showAlert('WhatsApp disconnected. Please refresh and scan QR code again.', 'error');
+        });
+
+        socket.on('message_queued', (message) => {
+            addLog(`📤 Message queued for ${message.number}`, 'info');
+            updateQueue();
+        });
+
+        socket.on('message_sent', (message) => {
+            addLog(`✅ Message sent to ${message.number}`, 'success');
+            updateQueue();
+        });
+
+        socket.on('message_failed', (message) => {
+            addLog(`❌ Failed to send message to ${message.number}: ${message.error}`, 'error');
+            updateQueue();
+        });
+
+        socket.on('stats_update', (newStats) => {
+            stats = newStats;
+            updateStats();
+        });
+
+        socket.on('status_update', (data) => {
+            addLog(`ℹ️ ${data.message}`, 'info');
+        });
+
+        socket.on('error', (data) => {
+            addLog(`❌ Error: ${data.message}`, 'error');
+            showAlert(data.message, 'error');
+        });
+
+        // Form handlers
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const phoneNumber = document.getElementById('phone-number').value;
+            const messageText = document.getElementById('message-text').value;
+            const priority = document.getElementById('priority').value;
+            
+            // Basic validation
+            if (!phoneNumber || !messageText) {
+                showAlert('Please fill in both phone number and message', 'warning');
+                return;
+            }
+            
+            // Check if connected (but allow manual override for testing)
+            if (!connected) {
+                const proceed = confirm('WhatsApp is not connected yet. Do you want to try anyway? (For testing purposes)');
+                if (!proceed) {
+                    showAlert('Please wait for WhatsApp to connect first', 'warning');
+                    return;
+                }
+            }
+            
+            try {
+                sendBtn.disabled = true;
+                sendBtn.textContent = 'Adding to Queue...';
+                
+                const response = await fetch('/api/send-message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        number: phoneNumber,
+                        message: messageText,
+                        priority: priority
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert(`Message queued successfully! Position: ${result.queuePosition}`, 'success');
+                    document.getElementById('message-text').value = '';
+                } else {
+                    showAlert(result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Failed to queue message: ' + error.message, 'error');
+            } finally {
+                sendBtn.disabled = !connected; // Re-enable if connected
+                sendBtn.textContent = 'Add to Queue';
+            }
+        });
+
+        document.getElementById('validate-number').addEventListener('click', async () => {
+            const phoneNumber = document.getElementById('phone-number').value;
+            
+            if (!phoneNumber) {
+                showAlert('Please enter a phone number', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/validate-number', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ number: phoneNumber })
+                });
+                
+                const result = await response.json();
+                
+                if (result.valid) {
+                    showAlert('✅ Valid WhatsApp number!', 'success');
+                } else {
+                    showAlert('❌ Not a valid WhatsApp number', 'error');
+                }
+            } catch (error) {
+                showAlert('Failed to validate number', 'error');
+            }
+        });
+
+        document.getElementById('force-enable-btn').addEventListener('click', () => {
+            sendBtn.disabled = false;
+            showAlert('Send button force-enabled for testing!', 'warning');
+            addLog('⚠️ Send button manually enabled (testing mode)', 'warning');
+        });
+
+        document.getElementById('start-processing').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/start-processing', {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('Message processing started!', 'success');
+                } else {
+                    showAlert(result.message, 'info');
+                }
+            } catch (error) {
+                showAlert('Failed to start processing', 'error');
+            }
+        });
+
+        document.getElementById('load-contacts').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/contacts');
+                const contacts = await response.json();
+                
+                const container = document.getElementById('contacts-container');
+                container.innerHTML = '';
+                container.style.display = 'block';
+                
+                contacts.forEach(contact => {
+                    const contactDiv = document.createElement('div');
+                    contactDiv.className = 'contact-item';
+                    contactDiv.innerHTML = `
+                        <strong>${contact.name || contact.pushname || 'Unknown'}</strong><br>
+                        <small>${contact.number}</small>
+                    `;
+                    contactDiv.addEventListener('click', () => {
+                        document.getElementById('phone-number').value = contact.number;
+                    });
+                    container.appendChild(contactDiv);
+                });
+                
+                showAlert(`Loaded ${contacts.length} contacts`, 'success');
+            } catch (error) {
+                showAlert('Failed to load contacts', 'error');
+            }
+        });
+
+        // Helper functions
+        function updateStatus(data) {
+            connected = data.connected;
+            stats = data.stats;
+            updateConnectionStatus(connected);
+            updateStats();
+            queueLength.textContent = data.queueLength;
+            
+            // Enable/disable send button based on connection
+            sendBtn.disabled = !connected;
+            
+            // Log status for debugging
+            addLog(`📊 Status update: Connected=${connected}, Queue=${data.queueLength}, Processing=${data.processing}`, 'info');
+        }
+
+        
+        // Debug monitoring functions
+        async function refreshDebugInfo() {
+            try {
+                const response = await fetch('/api/debug-status');
+                const debugData = await response.json();
+                
+                // Update connection info
+                document.getElementById('debug-connection').innerHTML = `
+                    <div>Connected: <strong>${debugData.connection.isConnected ? '✅ Yes' : '❌ No'}</strong></div>
+                    <div>Client State: <strong>${debugData.connection.clientState}</strong></div>
+                    <div>Updated: ${new Date(debugData.timestamp).toLocaleTimeString()}</div>
+                `;
+                
+                // Update processing info
+                document.getElementById('debug-processing').innerHTML = `
+                    <div>Processing: <strong>${debugData.processing.isProcessing ? '🔄 Active' : '⏸️ Idle'}</strong></div>
+                    <div>Queue Length: <strong>${debugData.processing.queueLength}</strong></div>
+                    <div>Rate: <strong>${debugData.stats.messagesPerMinute}/${debugData.rateLimiter.maxPerMinute}/min</strong></div>
+                `;
+                
+                // Update queue info
+                const queueInfo = debugData.processing.messagesInQueue.length > 0 ? 
+                    debugData.processing.messagesInQueue.map(m => `
+                        <div style="font-size: 0.9em; margin: 3px 0; padding: 5px; background: white; border-radius: 4px;">
+                            📞 ${m.number}<br>
+                            💬 ${m.message}<br>
+                            📊 Status: ${m.status}, Retries: ${m.retries}
+                        </div>
+                    `).join('') : '<div>No messages in queue</div>';
+                
+                document.getElementById('debug-queue').innerHTML = queueInfo;
+                
+            } catch (error) {
+                console.error('Debug refresh error:', error);
+                document.getElementById('debug-connection').innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Auto-refresh debug info every 3 seconds
+        setInterval(refreshDebugInfo, 3000);
+        
+        // Manual refresh button
+        document.getElementById('refresh-debug').addEventListener('click', refreshDebugInfo);
+        
+        // Test message button
+        document.getElementById('test-message-btn').addEventListener('click', async () => {
+            const number = document.getElementById('test-number').value;
+            const message = document.getElementById('test-msg').value + ' ' + new Date().toLocaleTimeString();
+            
+            if (!number || !message) {
+                alert('Please enter both number and message');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/test-message/${encodeURIComponent(number)}/${encodeURIComponent(message)}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    addLog(`🧪 Test message queued: ${number}`, 'success');
+                } else {
+                    addLog(`❌ Test failed: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                addLog(`❌ Test error: ${error.message}`, 'error');
+            }
+        });
+        
+        // Initial debug load
+        setTimeout(refreshDebugInfo, 1000);
+
+        function updateConnectionStatus(isConnected) {
+            if (isConnected) {
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.className = 'status-value connected';
+            } else {
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.className = 'status-value disconnected';
+            }
+        }
+
+        function updateStats() {
+            dailyCount.textContent = stats.dailyCount || 0;
+            rateCount.textContent = `${stats.messagesPerMinute || 0}/15`;
+            document.getElementById('total-sent').textContent = stats.messagesSent || 0;
+            
+            // Update progress bar
+            const progress = ((stats.dailyCount || 0) / 1000) * 100;
+            document.getElementById('daily-progress').style.width = `${Math.min(progress, 100)}%`;
+            document.getElementById('daily-progress-text').textContent = `${stats.dailyCount || 0} / 1000 messages`;
+            
+            // Warning for rate limits
+            if (stats.messagesPerMinute >= 12) {
+                rateCount.className = 'status-value warning';
+            } else if (stats.messagesPerMinute >= 15) {
+                rateCount.className = 'status-value disconnected';
+            } else {
+                rateCount.className = 'status-value connected';
+            }
+        }
+
+        function showQRCode(qr) {
+            qrCode.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}" alt="QR Code">`;
+            qrSection.style.display = 'block';
+            addLog('📱 QR Code generated. Please scan with WhatsApp.', 'info');
+        }
+
+        function hideQRCode() {
+            qrSection.style.display = 'none';
+        }
+
+        function addLog(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.innerHTML = `<span style="color: #888;">[${new Date().toLocaleTimeString()}]</span> ${message}`;
+            logs.appendChild(logEntry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function showAlert(message, type) {
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alerts.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
+        async function updateQueue() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                queueLength.textContent = data.queueLength;
+            } catch (error) {
+                console.error('Failed to update queue:', error);
+            }
+        }
+
+        // Initialize
+        addLog('🌐 Web interface loaded. Connecting to bot...', 'info');
+    </script>
+</body>
+</html>
