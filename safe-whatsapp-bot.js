@@ -19,16 +19,34 @@ class SafeWhatsAppBot {
         this.stats = {
             messagesSent: 0,
             messagesPerMinute: 0,
+            messagesPerHour: 0,
             dailyCount: 0,
-            lastReset: new Date().toDateString()
+            lastReset: new Date().toDateString(),
+            lastHourReset: new Date().getHours(),
+            consecutiveMessages: 0,
+            lastMessageTime: 0,
+            violations: 0,
+            warningLevel: 'green', // green, yellow, red
+            numberMessageCounts: new Map(), // Track messages per number
+            dailyUniqueNumbers: new Set() // Track unique numbers contacted today
         };
         this.rateLimiter = {
-            maxPerMinute: 15,
-            maxPerDay: 1000,
-            minDelay: 6000, // 6 seconds
-            maxDelay: 10000, // 10 seconds
-            breakAfter: 10, // Take break after 10 messages
-            breakDuration: 300000 // 5 minutes
+            maxPerMinute: 15, // High throughput: 15 messages per minute
+            maxPerHour: 900, // 15*60 = 900 messages per hour
+            maxPerDay: Infinity, // UNLIMITED: No daily limit on total messages
+            maxPerNumber: 5, // INCREASED: Max 5 messages per unique number per day (up from 3)
+            maxUniqueNumbersPerDay: Infinity, // UNLIMITED: No limit on unique numbers
+            minDelay: 4000, // Aggressive: Minimum 4 seconds between messages (15/min = 4s)
+            maxDelay: 8000, // Aggressive: Maximum 8 seconds between messages
+            breakAfter: 15, // Take break after every 15 messages (1 minute worth)
+            breakDuration: 300000, // 5 minute break (reduced for high throughput)
+            longBreakAfter: 100, // Long break after 100 messages
+            longBreakDuration: 1800000, // 30 minute long break (reduced)
+            dailyBreakStart: 23, // Start daily break at 11 PM (later for more working hours)
+            dailyBreakEnd: 7, // End daily break at 7 AM (earlier start)
+            weekendSlowdown: false, // NO weekend slowdown for maximum throughput
+            numberCooldown: 43200000, // 12 hours cooldown (reduced from 24h for faster re-messaging)
+            suspiciousPatternThreshold: 10 // Higher threshold for aggressive sending
         };
         
         console.log('📊 Configuration loaded');
@@ -682,6 +700,10 @@ class SafeWhatsAppBot {
                     clientState = 'error: ' + error.message;
                 }
                 
+                const violationCheck = await this.checkForViolations();
+                const currentHour = new Date().getHours();
+                const isQuietTime = currentHour >= this.rateLimiter.dailyBreakStart || currentHour < this.rateLimiter.dailyBreakEnd;
+                
                 const response = {
                     timestamp: new Date().toISOString(),
                     connection: {
@@ -700,13 +722,189 @@ class SafeWhatsAppBot {
                             queuedAt: m.queuedAt
                         }))
                     },
-                    stats: this.stats,
-                    rateLimiter: this.rateLimiter
+                    stats: {
+                        ...this.stats,
+                        // Convert Map and Set to objects/arrays for JSON
+                        numberMessageCounts: Object.fromEntries(this.stats.numberMessageCounts),
+                        dailyUniqueNumbers: Array.from(this.stats.dailyUniqueNumbers)
+                    },
+                    rateLimiter: this.rateLimiter,
+                    antiViolation: {
+                        canSend: violationCheck.canSend,
+                        reason: violationCheck.reason,
+                        warningLevel: this.stats.warningLevel,
+                        isQuietTime: isQuietTime,
+                        dailyProgress: `${this.stats.dailyCount}/∞ (unlimited)`,
+                        hourlyProgress: `${this.stats.messagesPerHour}/${this.rateLimiter.maxPerHour}`,
+                        uniqueNumbersProgress: `${this.stats.dailyUniqueNumbers.size}/∞ (unlimited)`,
+                        consecutiveMessages: this.stats.consecutiveMessages,
+                        violations: this.stats.violations,
+                        perNumberLimits: {
+                            maxPerNumber: this.rateLimiter.maxPerNumber,
+                            numbersAtLimit: Array.from(this.stats.numberMessageCounts.entries())
+                                .filter(([num, count]) => count >= this.rateLimiter.maxPerNumber)
+                                .map(([num, count]) => ({ number: num, count }))
+                        }
+                    }
                 };
                 res.json(response);
             } catch (error) {
                 console.error('Debug status error:', error);
                 res.status(500).json({ error: error.message });
+            }
+        });
+
+        // Safety check endpoint for content analysis
+        this.app.post('/api/check-message-safety', async (req, res) => {
+            try {
+                const { message } = req.body;
+                
+                if (!message) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Message content is required'
+                    });
+                }
+                
+                const contentCheck = this.analyzeMessageContent(message);
+                const violationCheck = await this.checkForViolations();
+                
+                res.json({
+                    success: true,
+                    contentAnalysis: contentCheck,
+                    violationCheck: violationCheck,
+                    recommendation: contentCheck.safe && violationCheck.canSend 
+                        ? 'Safe to send' 
+                        : 'Not recommended to send',
+                    reasons: [
+                        ...(contentCheck.safe ? [] : [contentCheck.reason]),
+                        ...(violationCheck.canSend ? [] : [violationCheck.reason])
+                    ]
+                });
+            } catch (error) {
+                console.error('❌ Safety check error:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Emergency stop endpoint
+        this.app.post('/api/emergency-stop', async (req, res) => {
+            try {
+                console.log('🚨 [EMERGENCY] Emergency stop requested');
+                
+                // Clear queue
+                this.messageQueue = [];
+                this.isProcessing = false;
+                
+                // Set violation warning to maximum
+                this.stats.warningLevel = 'red';
+                this.stats.violations += 10;
+                
+                console.log('🛑 [EMERGENCY] All messaging stopped, queue cleared');
+                
+                res.json({
+                    success: true,
+                    message: 'Emergency stop activated. All messaging has been halted.',
+                    queueCleared: true,
+                    processingStop: true
+                });
+            } catch (error) {
+                console.error('❌ Emergency stop error:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Per-number limit check endpoint
+        this.app.get('/api/check-number-limit/:number', async (req, res) => {
+            try {
+                const { number } = req.params;
+                
+                if (!number) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Number parameter is required'
+                    });
+                }
+
+                const formattedNumber = this.formatPhoneNumber(number);
+                if (!formattedNumber) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Invalid phone number format'
+                    });
+                }
+
+                const currentCount = this.stats.numberMessageCounts.get(formattedNumber) || 0;
+                const limit = this.rateLimiter.maxPerNumber;
+                const remaining = Math.max(0, limit - currentCount);
+                const canSend = currentCount < limit;
+
+                res.json({
+                    success: true,
+                    number: formattedNumber,
+                    currentCount: currentCount,
+                    limit: limit,
+                    remaining: remaining,
+                    canSend: canSend,
+                    status: canSend ? 'available' : 'limit_reached',
+                    message: canSend 
+                        ? `${remaining} messages remaining for this number today`
+                        : `Daily limit of ${limit} messages reached for this number`
+                });
+            } catch (error) {
+                console.error('❌ Number limit check error:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // High-throughput configuration endpoint
+        this.app.get('/api/throughput-config', (req, res) => {
+            try {
+                const config = {
+                    messagesPerMinute: this.rateLimiter.maxPerMinute,
+                    messagesPerHour: this.rateLimiter.maxPerHour,
+                    messagesPerDay: 'Unlimited',
+                    perNumberLimit: this.rateLimiter.maxPerNumber,
+                    delayRange: `${this.rateLimiter.minDelay/1000}s - ${this.rateLimiter.maxDelay/1000}s`,
+                    breakSchedule: {
+                        regularBreak: `Every ${this.rateLimiter.breakAfter} messages`,
+                        regularBreakDuration: `${this.rateLimiter.breakDuration/1000/60} minutes`,
+                        longBreak: `Every ${this.rateLimiter.longBreakAfter} messages`,
+                        longBreakDuration: `${this.rateLimiter.longBreakDuration/1000/60} minutes`
+                    },
+                    theoreticalMax: {
+                        perHour: `${this.rateLimiter.maxPerMinute * 60} messages/hour`,
+                        perDay: `${this.rateLimiter.maxPerMinute * 60 * 24} messages/day (if running 24/7)`,
+                        uniqueNumbers: `${Math.floor((this.rateLimiter.maxPerMinute * 60 * 24) / this.rateLimiter.maxPerNumber)} unique numbers/day`
+                    },
+                    optimizations: {
+                        weekendSlowdown: this.rateLimiter.weekendSlowdown,
+                        numberCooldown: `${this.rateLimiter.numberCooldown/1000/60/60} hours`,
+                        aggressiveMode: true
+                    }
+                };
+
+                res.json({
+                    success: true,
+                    message: 'High-throughput configuration active',
+                    config: config,
+                    warning: 'This is an aggressive configuration. Monitor for WhatsApp violations.'
+                });
+            } catch (error) {
+                console.error('❌ Throughput config error:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
             }
         });
 
@@ -777,6 +975,30 @@ class SafeWhatsAppBot {
             throw new Error('Invalid message: message is required and must be a string');
         }
         
+        // Content analysis for spam detection
+        const contentCheck = this.analyzeMessageContent(message);
+        if (!contentCheck.safe) {
+            console.error(`❌ [QUEUE] Message blocked due to content: ${contentCheck.reason}`);
+            throw new Error(`Message blocked: ${contentCheck.reason}`);
+        }
+        
+        // Pre-queue violation check including per-number limits
+        const violationCheck = await this.checkForViolations(formattedNumber);
+        if (!violationCheck.canSend) {
+            console.error(`❌ [QUEUE] Message blocked due to violations: ${violationCheck.reason}`);
+            throw new Error(`Cannot queue message: ${violationCheck.reason}`);
+        }
+        
+        // Log per-number limit status
+        if (violationCheck.numberLimitCheck) {
+            const { number, currentCount, limit } = violationCheck.numberLimitCheck;
+            console.log(`📊 [QUEUE] Number ${number} usage: ${currentCount}/${limit} messages today`);
+            
+            if (currentCount >= limit - 1) {
+                console.log(`⚠️ [QUEUE] WARNING: Number ${number} will reach limit after this message`);
+            }
+        }
+        
         // Validate number format
         const formattedNumber = this.formatPhoneNumber(number);
         console.log(`📞 [QUEUE] Formatted number: ${formattedNumber} at ${queueTime}`);
@@ -785,12 +1007,8 @@ class SafeWhatsAppBot {
             throw new Error('Invalid phone number format');
         }
 
-        // Check daily limit
-        console.log(`📊 [QUEUE] Daily count check at ${queueTime}: ${this.stats.dailyCount}/${this.rateLimiter.maxPerDay}`);
-        if (this.stats.dailyCount >= this.rateLimiter.maxPerDay) {
-            console.log(`❌ [QUEUE] Daily message limit reached at ${queueTime}`);
-            throw new Error('Daily message limit reached');
-        }
+        // Daily limit removed - unlimited total messages, only per-number limit applies
+        console.log(`📊 [QUEUE] Unlimited total messages allowed (queueMessage) at ${queueTime}`);
 
         // Validate WhatsApp user
         console.log(`🔍 [QUEUE] Validating WhatsApp user: ${formattedNumber} at ${queueTime}`);
@@ -888,12 +1106,8 @@ class SafeWhatsAppBot {
             throw new Error('Invalid phone number format');
         }
 
-        // Check daily limit
-        console.log(`📊 [QUEUE] Daily count check at ${queueTime}: ${this.stats.dailyCount}/${this.rateLimiter.maxPerDay}`);
-        if (this.stats.dailyCount >= this.rateLimiter.maxPerDay) {
-            console.log(`❌ [QUEUE] Daily message limit reached at ${queueTime}`);
-            throw new Error('Daily message limit reached');
-        }
+        // Daily limit removed - unlimited total messages, only per-number limit applies
+        console.log(`📊 [QUEUE] Unlimited total messages allowed (queueMediaMessage) at ${queueTime}`);
 
         // Validate WhatsApp user
         console.log(`🔍 [QUEUE] Validating WhatsApp user: ${formattedNumber} at ${queueTime}`);
@@ -1007,7 +1221,7 @@ class SafeWhatsAppBot {
                 const duration = ((endTime - startTime) / 1000).toFixed(2);
                 console.log(`✅ [PROCESSOR] sendMessageSafely completed in ${duration}s at ${new Date().toLocaleTimeString()}`);
                 
-                this.updateStats();
+                this.updateStats(message.number); // Pass the target number for per-number tracking
                 
                 // Take break after certain number of messages
                 if (this.stats.messagesSent % this.rateLimiter.breakAfter === 0) {
@@ -1027,19 +1241,46 @@ class SafeWhatsAppBot {
                 this.broadcastToClients('message_failed', message);
             }
             
-            // Random delay between messages with countdown
-            const delay = Math.random() * (this.rateLimiter.maxDelay - this.rateLimiter.minDelay) + this.rateLimiter.minDelay;
-            const delaySeconds = Math.round(delay/1000);
-            console.log(`⏱️ [PROCESSOR] Waiting ${delaySeconds} seconds before next message (started at ${new Date().toLocaleTimeString()})...`);
+            // Aggressive delay optimization for high throughput (15/min = 4s intervals)
+            const baseDelay = Math.random() * (this.rateLimiter.maxDelay - this.rateLimiter.minDelay) + this.rateLimiter.minDelay;
             
-            // Show countdown timer
+            // Reduced randomness for consistent high throughput
+            const randomVariation = (Math.random() - 0.5) * 2000; // ±1 second variation only
+            const finalDelay = Math.max(3000, baseDelay + randomVariation); // Minimum 3 seconds for aggressive sending
+            
+            const delaySeconds = Math.round(finalDelay/1000);
+            console.log(`⚡ [PROCESSOR] High-throughput delay: ${delaySeconds} seconds (15/min target) at ${new Date().toLocaleTimeString()}...`);
+            
+            // Enhanced break logic
+            if (this.stats.consecutiveMessages >= this.rateLimiter.breakAfter) {
+                const breakTime = new Date().toLocaleTimeString();
+                console.log(`😴 [PROCESSOR] Taking regular break after ${this.stats.consecutiveMessages} messages at ${breakTime}...`);
+                this.broadcastToClients('status_update', { 
+                    message: `Taking a ${this.rateLimiter.breakDuration/1000/60} minute break to avoid violations` 
+                });
+                await this.delay(this.rateLimiter.breakDuration);
+                this.stats.consecutiveMessages = 0;
+            }
+
+            // Long break for extended messaging
+            if (this.stats.messagesSent > 0 && this.stats.messagesSent % this.rateLimiter.longBreakAfter === 0) {
+                const longBreakTime = new Date().toLocaleTimeString();
+                console.log(`🛌 [PROCESSOR] Taking LONG break after ${this.stats.messagesSent} total messages at ${longBreakTime}...`);
+                this.broadcastToClients('status_update', { 
+                    message: `Taking a ${this.rateLimiter.longBreakDuration/1000/60} minute long break for safety` 
+                });
+                await this.delay(this.rateLimiter.longBreakDuration);
+            }
+            
+            // Optimized countdown for high throughput (shorter delays)
+            const countdownIntervals = [1, 2, 3]; // Only show final seconds for speed
             for (let i = delaySeconds; i > 0; i--) {
-                if (i <= 5 || i % 5 === 0) {
-                    console.log(`⏰ [TIMER] ${i} seconds remaining...`);
+                if (countdownIntervals.includes(i)) {
+                    console.log(`⚡ [TIMER] ${i}s remaining (high-throughput mode)...`);
                 }
                 await this.delay(1000);
             }
-            console.log(`✅ [TIMER] Delay completed at ${new Date().toLocaleTimeString()}`);
+            console.log(`🚀 [TIMER] Ready for next message at ${new Date().toLocaleTimeString()}`);
         }
         
         console.log(`🏁 [PROCESSOR] Message processor finished at ${new Date().toLocaleTimeString()}`);
@@ -1057,13 +1298,51 @@ class SafeWhatsAppBot {
         });
         
         try {
-            // Check rate limits
-            console.log(`📊 [SEND] Rate check at ${new Date().toLocaleTimeString()}: ${this.stats.messagesPerMinute}/${this.rateLimiter.maxPerMinute} per minute`);
+            // Anti-violation checks BEFORE sending (including per-number limits)
+            const violationCheck = await this.checkForViolations(messageObj.number);
+            if (!violationCheck.canSend) {
+                console.log(`🚫 [VIOLATION] Message blocked: ${violationCheck.reason}`);
+                throw new Error(`Message sending blocked to prevent violations: ${violationCheck.reason}`);
+            }
+
+            // Log per-number status
+            if (violationCheck.numberLimitCheck) {
+                const { number, currentCount, limit } = violationCheck.numberLimitCheck;
+                console.log(`📊 [SEND] Number ${number} status: ${currentCount}/${limit} messages used today`);
+            }
+
+            // Enhanced rate limit checks
+            console.log(`📊 [SEND] Rate check at ${new Date().toLocaleTimeString()}: ${this.stats.messagesPerMinute}/${this.rateLimiter.maxPerMinute} per minute, ${this.stats.messagesPerHour}/${this.rateLimiter.maxPerHour} per hour`);
+            
             if (this.stats.messagesPerMinute >= this.rateLimiter.maxPerMinute) {
-                console.log(`⚠️ [SEND] Rate limit reached at ${new Date().toLocaleTimeString()}, waiting 1 minute...`);
-                await this.delay(60000); // Wait 1 minute
+                console.log(`⚠️ [SEND] Per-minute rate limit reached, waiting 1 minute...`);
+                await this.delay(60000);
                 this.stats.messagesPerMinute = 0;
-                console.log(`✅ [SEND] Rate limit wait completed at ${new Date().toLocaleTimeString()}`);
+                console.log(`✅ [SEND] Per-minute rate limit wait completed`);
+            }
+
+            if (this.stats.messagesPerHour >= this.rateLimiter.maxPerHour) {
+                console.log(`⚠️ [SEND] Hourly rate limit reached, waiting 1 hour...`);
+                await this.delay(3600000);
+                this.stats.messagesPerHour = 0;
+                console.log(`✅ [SEND] Hourly rate limit wait completed`);
+            }
+
+            // Check for daily quiet hours
+            const currentHour = new Date().getHours();
+            if (currentHour >= this.rateLimiter.dailyBreakStart || currentHour < this.rateLimiter.dailyBreakEnd) {
+                console.log(`😴 [SEND] In quiet hours (${this.rateLimiter.dailyBreakStart}:00 - ${this.rateLimiter.dailyBreakEnd}:00), delaying message...`);
+                const hoursUntilActive = currentHour >= this.rateLimiter.dailyBreakStart 
+                    ? (24 - currentHour + this.rateLimiter.dailyBreakEnd) 
+                    : (this.rateLimiter.dailyBreakEnd - currentHour);
+                await this.delay(hoursUntilActive * 3600000);
+            }
+
+            // Weekend slowdown
+            const isWeekend = [0, 6].includes(new Date().getDay());
+            if (isWeekend && this.rateLimiter.weekendSlowdown) {
+                console.log(`🏖️ [SEND] Weekend detected, applying extra delay...`);
+                await this.delay(30000); // Extra 30 seconds on weekends
             }
 
             // Enhanced client connection check
@@ -1286,25 +1565,237 @@ class SafeWhatsAppBot {
         return formatted;
     }
 
-    updateStats() {
+    analyzeMessageContent(message) {
+        const spamKeywords = [
+            'urgent', 'limited time', 'act now', 'call now', 'click here',
+            'free money', 'make money fast', 'get rich quick', 'guaranteed',
+            'winner', 'congratulations', 'you have won', 'claim now',
+            'bitcoin', 'cryptocurrency', 'investment opportunity',
+            'loan approved', 'credit card', 'debt relief',
+            'weight loss', 'lose weight fast', 'miracle cure',
+            'viagra', 'pharmacy', 'prescription'
+        ];
+        
+        const suspiciousPatterns = [
+            /(.)\1{4,}/g, // Repeated characters (aaaaa, 11111)
+            /[A-Z]{10,}/g, // Too many capitals
+            /(!)(\1{3,})/g, // Multiple exclamation marks
+            /(\d+%\s*(off|discount|sale))/gi, // Discount offers
+            /\$\d+/g, // Dollar amounts
+            /(whatsapp\.com|wa\.me)/gi // WhatsApp links
+        ];
+        
+        const messageLength = message.length;
+        const lowerMessage = message.toLowerCase();
+        
+        // Check for spam keywords
+        const foundSpamWords = spamKeywords.filter(keyword => 
+            lowerMessage.includes(keyword.toLowerCase())
+        );
+        
+        if (foundSpamWords.length > 0) {
+            return {
+                safe: false,
+                reason: `Contains spam keywords: ${foundSpamWords.join(', ')}`,
+                riskLevel: 'high'
+            };
+        }
+        
+        // Check for suspicious patterns
+        const foundPatterns = suspiciousPatterns.filter(pattern => 
+            pattern.test(message)
+        );
+        
+        if (foundPatterns.length > 2) {
+            return {
+                safe: false,
+                reason: 'Message contains multiple suspicious patterns',
+                riskLevel: 'high'
+            };
+        }
+        
+        // Check message length (too short or too long can be suspicious)
+        if (messageLength < 5) {
+            return {
+                safe: false,
+                reason: 'Message too short (potential spam)',
+                riskLevel: 'medium'
+            };
+        }
+        
+        if (messageLength > 1000) {
+            return {
+                safe: false,
+                reason: 'Message too long (potential spam)',
+                riskLevel: 'medium'
+            };
+        }
+        
+        // Check for too many URLs
+        const urlCount = (message.match(/https?:\/\/[^\s]+/g) || []).length;
+        if (urlCount > 2) {
+            return {
+                safe: false,
+                reason: 'Too many URLs in message',
+                riskLevel: 'high'
+            };
+        }
+        
+        console.log(`✅ [CONTENT] Message passed content analysis (${messageLength} chars, ${foundPatterns.length} patterns)`);
+        return {
+            safe: true,
+            reason: 'Content analysis passed',
+            riskLevel: 'low'
+        };
+    }
+
+    async checkForViolations(targetNumber = null) {
+        const now = Date.now();
+        const currentHour = new Date().getHours();
         const today = new Date().toDateString();
+        
+        // Reset hourly counter
+        if (new Date().getHours() !== this.stats.lastHourReset) {
+            this.stats.messagesPerHour = 0;
+            this.stats.lastHourReset = new Date().getHours();
+        }
+        
+        // Reset daily counter and per-number tracking
+        if (this.stats.lastReset !== today) {
+            this.stats.dailyCount = 0;
+            this.stats.lastReset = today;
+            this.stats.violations = 0;
+            this.stats.warningLevel = 'green';
+            this.stats.numberMessageCounts.clear(); // Reset per-number counts
+            this.stats.dailyUniqueNumbers.clear(); // Reset unique numbers
+            console.log(`🔄 [RESET] Daily stats reset for ${today}`);
+        }
+        
+        // Daily limit removed - unlimited total messages allowed
+        console.log(`📊 [CHECK] Unlimited daily messages - only per-number limits apply`);
+        
+        // Check unique numbers limit - also unlimited now
+        console.log(`📊 [CHECK] Unlimited unique numbers allowed per day`);
+        
+        // CRITICAL: Check per-number message limit
+        if (targetNumber) {
+            const numberKey = targetNumber.replace('@c.us', ''); // Clean key
+            const messagesForNumber = this.stats.numberMessageCounts.get(numberKey) || 0;
+            
+            if (messagesForNumber >= this.rateLimiter.maxPerNumber) {
+                this.stats.warningLevel = 'red';
+                console.log(`🚫 [VIOLATION] Number ${numberKey} has reached limit: ${messagesForNumber}/${this.rateLimiter.maxPerNumber}`);
+                return {
+                    canSend: false,
+                    reason: `Number ${numberKey} has reached daily limit of ${this.rateLimiter.maxPerNumber} messages`
+                };
+            }
+            
+            console.log(`📊 [CHECK] Number ${numberKey} messages: ${messagesForNumber}/${this.rateLimiter.maxPerNumber}`);
+        }
+        
+        // Check if too many messages sent too quickly
+        const timeSinceLastMessage = now - this.stats.lastMessageTime;
+        if (timeSinceLastMessage < this.rateLimiter.minDelay) {
+            return {
+                canSend: false,
+                reason: `Minimum delay of ${this.rateLimiter.minDelay/1000} seconds not met`
+            };
+        }
+        
+        // Check quiet hours
+        if (currentHour >= this.rateLimiter.dailyBreakStart || currentHour < this.rateLimiter.dailyBreakEnd) {
+            return {
+                canSend: false,
+                reason: `Quiet hours active (${this.rateLimiter.dailyBreakStart}:00 - ${this.rateLimiter.dailyBreakEnd}:00)`
+            };
+        }
+        
+        // Warning system based on multiple factors
+        const dailyUsagePercent = (this.stats.dailyCount / this.rateLimiter.maxPerDay) * 100;
+        const uniqueNumbersPercent = (this.stats.dailyUniqueNumbers.size / this.rateLimiter.maxUniqueNumbersPerDay) * 100;
+        
+        if (dailyUsagePercent > 80 || uniqueNumbersPercent > 80) {
+            this.stats.warningLevel = 'red';
+            console.log(`🚨 [WARNING] High usage: ${dailyUsagePercent.toFixed(1)}% daily, ${uniqueNumbersPercent.toFixed(1)}% unique numbers`);
+        } else if (dailyUsagePercent > 60 || uniqueNumbersPercent > 60) {
+            this.stats.warningLevel = 'yellow';
+            console.log(`⚠️ [WARNING] Moderate usage: ${dailyUsagePercent.toFixed(1)}% daily, ${uniqueNumbersPercent.toFixed(1)}% unique numbers`);
+        }
+        
+        // Check for suspicious patterns
+        if (this.stats.consecutiveMessages > this.rateLimiter.suspiciousPatternThreshold) {
+            console.log(`⚠️ [PATTERN] High consecutive messages detected: ${this.stats.consecutiveMessages}`);
+            this.stats.violations++;
+        }
+        
+        return {
+            canSend: true,
+            reason: 'All checks passed',
+            warningLevel: this.stats.warningLevel,
+            numberLimitCheck: targetNumber ? {
+                number: targetNumber.replace('@c.us', ''),
+                currentCount: this.stats.numberMessageCounts.get(targetNumber.replace('@c.us', '')) || 0,
+                limit: this.rateLimiter.maxPerNumber
+            } : null
+        };
+    }
+
+    updateStats(targetNumber = null) {
+        const today = new Date().toDateString();
+        const currentHour = new Date().getHours();
         
         // Reset daily count if new day
         if (this.stats.lastReset !== today) {
             this.stats.dailyCount = 0;
             this.stats.lastReset = today;
+            this.stats.violations = 0;
+            this.stats.warningLevel = 'green';
+            this.stats.numberMessageCounts.clear();
+            this.stats.dailyUniqueNumbers.clear();
+        }
+        
+        // Reset hourly count if new hour
+        if (this.stats.lastHourReset !== currentHour) {
+            this.stats.messagesPerHour = 0;
+            this.stats.lastHourReset = currentHour;
         }
         
         this.stats.messagesSent++;
         this.stats.dailyCount++;
+        this.stats.messagesPerHour++;
         this.stats.messagesPerMinute++;
+        this.stats.consecutiveMessages++;
+        this.stats.lastMessageTime = Date.now();
+        
+        // CRITICAL: Track per-number message counts
+        if (targetNumber) {
+            const numberKey = targetNumber.replace('@c.us', ''); // Clean key
+            const currentCount = this.stats.numberMessageCounts.get(numberKey) || 0;
+            this.stats.numberMessageCounts.set(numberKey, currentCount + 1);
+            this.stats.dailyUniqueNumbers.add(numberKey);
+            
+            console.log(`📊 [STATS] Number ${numberKey} now has ${currentCount + 1}/${this.rateLimiter.maxPerNumber} messages today`);
+            
+            // Warning if approaching per-number limit
+            if (currentCount + 1 >= this.rateLimiter.maxPerNumber) {
+                console.log(`🚫 [LIMIT] Number ${numberKey} has reached maximum daily messages (${this.rateLimiter.maxPerNumber})`);
+            }
+        }
         
         // Reset per-minute counter every minute
         setTimeout(() => {
             this.stats.messagesPerMinute = Math.max(0, this.stats.messagesPerMinute - 1);
         }, 60000);
         
-        this.broadcastToClients('stats_update', this.stats);
+        console.log(`📊 [STATS] Updated - Daily: ${this.stats.dailyCount}/${this.rateLimiter.maxPerDay}, Hourly: ${this.stats.messagesPerHour}/${this.rateLimiter.maxPerHour}, Unique numbers: ${this.stats.dailyUniqueNumbers.size}/${this.rateLimiter.maxUniqueNumbersPerDay}, Warning: ${this.stats.warningLevel}`);
+        
+        this.broadcastToClients('stats_update', {
+            ...this.stats,
+            // Convert Map and Set to arrays for JSON serialization
+            numberMessageCounts: Object.fromEntries(this.stats.numberMessageCounts),
+            dailyUniqueNumbers: Array.from(this.stats.dailyUniqueNumbers)
+        });
     }
 
     broadcastToClients(event, data) {
