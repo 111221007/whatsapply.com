@@ -1,8 +1,9 @@
-const { Client, LocalAuth } = require('./index');
+const { Client, LocalAuth, RemoteAuth } = require('./index');
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const { MongoStore } = require('wwebjs-mongo');
 
 class SafeWhatsAppBot {
     constructor() {
@@ -61,13 +62,47 @@ class SafeWhatsAppBot {
                 });
             }
             
-            this.client = new Client({
-                authStrategy: new LocalAuth({ 
+            // Special Heroku configuration
+            const isProduction = process.env.NODE_ENV === 'production' || process.env.HEROKU;
+            console.log(`🌍 Environment: ${isProduction ? 'Production' : 'Development'}`);
+            
+            // Use different auth strategy based on environment
+            let authStrategy;
+            
+            // Check if we're running on Heroku and have a MongoDB URL
+            if (process.env.MONGODB_URI && (isProduction || process.env.HEROKU)) {
+                console.log('🗄️ Using RemoteAuth with MongoDB for persistent sessions');
+                try {
+                    const mongoose = require('mongoose');
+                    mongoose.connect(process.env.MONGODB_URI).then(() => {
+                        console.log('📦 MongoDB connected successfully');
+                    });
+                    const store = new MongoStore({ mongoose: mongoose });
+                    authStrategy = new RemoteAuth({
+                        clientId: 'safe-bot-heroku',
+                        store: store,
+                        backupSyncIntervalMs: 300000
+                    });
+                } catch (error) {
+                    console.error('❌ Failed to setup RemoteAuth:', error);
+                    console.log('⚠️ Falling back to LocalAuth');
+                    authStrategy = new LocalAuth({ 
+                        clientId: 'safe-bot',
+                        dataPath: './.wwebjs_auth/'
+                    });
+                }
+            } else {
+                console.log('📂 Using LocalAuth for local development');
+                authStrategy = new LocalAuth({ 
                     clientId: 'safe-bot',
                     dataPath: './.wwebjs_auth/'
-                }),
+                });
+            }
+            
+            this.client = new Client({
+                authStrategy: authStrategy,
                 puppeteer: { 
-                    headless: process.env.NODE_ENV === 'production' ? true : false,
+                    headless: isProduction ? true : false,
                     args: [
                         '--no-sandbox',
                         '--disable-setuid-sandbox',
@@ -743,20 +778,26 @@ process.on('SIGINT', async () => {
     process.exit(0);
 });
 
-// Start the bot
-console.log('🚀 Starting Safe WhatsApp Bot...');
-console.log(`📅 Time: ${new Date().toLocaleString()}`);
-console.log(`📁 Directory: ${process.cwd()}`);
-console.log(`📦 Node Version: ${process.version}`);
-console.log('');
-
-try {
-    global.bot = new SafeWhatsAppBot();
-    console.log('✅ Bot instance created successfully!');
-} catch (error) {
-    console.error('❌ Error creating bot:', error.message);
-    console.error('Stack:', error.stack);
-    process.exit(1);
+// If this file is run directly (not imported)
+if (require.main === module) {
+    console.log('🚀 Starting Safe WhatsApp Bot...');
+    console.log(`📅 Time: ${new Date().toLocaleString()}`);
+    console.log(`📁 Directory: ${process.cwd()}`);
+    console.log(`📦 Node Version: ${process.version}`);
+    console.log(`🖥️ Platform: ${process.platform}, Architecture: ${process.arch}`);
+    console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔗 Heroku: ${process.env.HEROKU ? 'Yes' : 'No'}`);
+    console.log('');
+    
+    try {
+        global.bot = new SafeWhatsAppBot();
+        console.log('✅ Bot instance created successfully!');
+    } catch (error) {
+        console.error('❌ Error creating bot:', error.message);
+        console.error('Stack:', error.stack);
+        process.exit(1);
+    }
 }
 
-module.exports = SafeWhatsAppBot;
+// Export the class for use in other files
+module.exports = { SafeWhatsAppBot };

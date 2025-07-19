@@ -1,1 +1,1 @@
-web: node safe-whatsapp-bot.js
+web: node heroku.js

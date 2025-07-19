@@ -734,21 +734,17 @@
                 const result = await response.json();
                 
                 if (result.valid) {
-                    // Update the phone number field with the formatted number if provided
-                    if (result.number && result.number !== phoneNumber) {
-                        document.getElementById('phone-number').value = result.number;
-                    }
-                    
-                    // Show appropriate message based on validation result
+                    // DON'T update the phone number field with @c.us format - keep user-friendly format
+                    // Show success message based on validation result
                     if (result.isWhatsAppNumber === true) {
                         showAlert('✅ Valid WhatsApp number confirmed!', 'success');
-                        addLog(`✅ Phone number validated: ${result.number}`, 'success');
+                        addLog(`✅ Phone number validated: ${phoneNumber} is a valid WhatsApp number`, 'success');
                     } else if (result.isWhatsAppNumber === false) {
                         showAlert('✅ Number format is valid. WhatsApp status unknown (this is normal).', 'success');
-                        addLog(`✅ Phone number format validated: ${result.number}`, 'success');
+                        addLog(`✅ Phone number format validated: ${phoneNumber}`, 'success');
                     } else {
-                        showAlert(`✅ ${result.message}`, 'success');
-                        addLog(`✅ Phone number validated: ${result.number}`, 'success');
+                        showAlert(`✅ Phone number is valid`, 'success');
+                        addLog(`✅ Phone number validated: ${phoneNumber}`, 'success');
                     }
                 } else {
                     showAlert(`❌ ${result.message}`, 'error');

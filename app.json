@@ -1,0 +1,41 @@
+{
+  "name": "Safe WhatsApp Bot",
+  "description": "A WhatsApp bot with safety controls built using whatsapp-web.js",
+  "repository": "https://github.com/yourusername/whatsapp-web.js",
+  "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/512px-WhatsApp.svg.png",
+  "keywords": ["node", "whatsapp", "bot", "automation", "messaging"],
+  "env": {
+    "NODE_ENV": {
+      "description": "Environment for the application",
+      "value": "production"
+    },
+    "HEROKU": {
+      "description": "Flag to identify Heroku environment",
+      "value": "true"
+    },
+    "MONGODB_URI": {
+      "description": "MongoDB connection URI for persistent session storage",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    },
+    {
+      "url": "https://github.com/jontewks/puppeteer-heroku-buildpack"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "addons": [
+    {
+      "plan": "mongolab:sandbox",
+      "as": "MONGODB"
+    }
+  ]
+}
