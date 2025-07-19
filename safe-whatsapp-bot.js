@@ -262,16 +262,23 @@ class SafeWhatsAppBot {
                 fileSize: 16 * 1024 * 1024 // 16MB limit
             },
             fileFilter: (req, file, cb) => {
-                // Allow images, videos, documents, audio
+                // Allow images, videos, documents, audio, and CSV files
                 const allowedTypes = [
                     'image/', 'video/', 'audio/', 'application/pdf', 
                     'application/msword', 'application/vnd.openxmlformats-officedocument',
-                    'application/zip', 'application/x-rar-compressed', 'text/'
+                    'application/zip', 'application/x-rar-compressed', 'text/',
+                    'text/csv', 'application/csv'
                 ];
                 
-                const isAllowed = allowedTypes.some(type => file.mimetype.startsWith(type));
+                // Special handling for CSV files (check extension as some systems don't set correct MIME type)
+                const isCSV = file.originalname.toLowerCase().endsWith('.csv') || 
+                             file.mimetype === 'text/csv' || 
+                             file.mimetype === 'application/csv';
+                
+                const isAllowed = allowedTypes.some(type => file.mimetype.startsWith(type)) || isCSV;
+                
                 if (!isAllowed) {
-                    return cb(new Error('File type not supported'));
+                    return cb(new Error('File type not supported. Allowed: images, videos, documents, audio, CSV files'));
                 }
                 cb(null, true);
             }
@@ -592,6 +599,74 @@ class SafeWhatsAppBot {
                 res.status(500).json({
                     success: false,
                     error: error.message
+                });
+            }
+        });
+
+        // CSV Upload endpoint - allows users to upload CSV files from their system
+        this.app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
+            try {
+                if (!req.file) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No CSV file uploaded. Please select a CSV file.'
+                    });
+                }
+
+                // Validate file type
+                if (!req.file.originalname.toLowerCase().endsWith('.csv')) {
+                    // Clean up uploaded file
+                    fs.unlinkSync(req.file.path);
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Invalid file type. Please upload a CSV file.'
+                    });
+                }
+
+                console.log(`📁 [UPLOAD] CSV file uploaded: ${req.file.originalname}`);
+
+                // Load and validate CSV content
+                const contacts = await this.loadContactsFromCSV(req.file.path);
+                
+                if (contacts.length === 0) {
+                    // Clean up uploaded file
+                    fs.unlinkSync(req.file.path);
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No valid contacts found in CSV. Please ensure your CSV has "Name" and "PhoneNumber" columns.'
+                    });
+                }
+
+                // Move uploaded file to replace the default contacts.csv
+                const targetPath = path.join(__dirname, 'contacts.csv');
+                fs.renameSync(req.file.path, targetPath);
+
+                console.log(`✅ [UPLOAD] Successfully uploaded and processed ${contacts.length} contacts`);
+
+                res.json({
+                    success: true,
+                    message: `Successfully uploaded and processed ${contacts.length} contacts from ${req.file.originalname}`,
+                    contacts: contacts.slice(0, 10), // Show first 10 contacts as preview
+                    totalCount: contacts.length,
+                    fileName: req.file.originalname,
+                    preview: contacts.length > 10 ? `Showing first 10 of ${contacts.length} contacts` : 'All contacts displayed',
+                    columnsDetected: {
+                        nameColumn: 'Name (auto-detected)',
+                        phoneColumn: 'PhoneNumber (auto-detected)',
+                        supportedFormats: ['Name/name/NAME', 'PhoneNumber/Phone/phone/PHONE']
+                    }
+                });
+
+            } catch (error) {
+                // Clean up uploaded file if there was an error
+                if (req.file && fs.existsSync(req.file.path)) {
+                    fs.unlinkSync(req.file.path);
+                }
+                
+                console.error('❌ Error uploading CSV:', error);
+                res.status(500).json({
+                    success: false,
+                    error: `Failed to process CSV file: ${error.message}`
                 });
             }
         });

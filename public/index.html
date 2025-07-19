@@ -439,6 +439,52 @@
             </div>
             
             <div class="card">
+                <h2> Contacts Management</h2>
+                
+                <!-- CSV Upload Section -->
+                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
+                    <h3 style="margin: 0 0 10px 0; color: #495057;">📁 Upload CSV File</h3>
+                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #6c757d;">
+                        Upload a CSV file with <strong>Name</strong> and <strong>PhoneNumber</strong> columns from your computer
+                    </p>
+                    
+                    <div style="margin-bottom: 10px;">
+                        <input type="file" id="csv-upload" accept=".csv" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        <small style="color: #666; font-size: 12px; display: block; margin-top: 5px;">
+                            📄 Supported columns: Name/name, PhoneNumber/Phone/phone (auto-detected)
+                        </small>
+                    </div>
+                    
+                    <button id="upload-csv-btn" class="btn" style="background: #007bff; color: white; margin-right: 10px;">
+                        📤 Upload CSV File
+                    </button>
+                    
+                    <div id="csv-upload-status" style="margin-top: 10px; display: none;"></div>
+                </div>
+                
+                <!-- Load Existing Contacts -->
+                <div style="margin-bottom: 20px;">
+                    <h3 style="margin: 0 0 10px 0; color: #495057;">📋 Load Existing Contacts</h3>
+                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #6c757d;">
+                        Load contacts from the default contacts.csv file (if uploaded previously)
+                    </p>
+                    <button id="load-contacts" class="btn">📂 Load Existing Contacts</button>
+                </div>
+                
+                <div id="contacts-container" class="contacts-list" style="display: none;">
+                    <!-- Contacts will be loaded here -->
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>📋 Message Queue</h2>
+                <button id="start-processing" class="btn btn-secondary" style="margin-bottom: 15px;">Start Processing Queue</button>
+                <div id="queue-container">
+                    <p>No messages in queue</p>
+                </div>
+            </div>
+            
+            <div class="card">
                 <h2>📊 Statistics</h2>
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -456,22 +502,6 @@
                     <div id="daily-progress" class="progress-fill" style="width: 0%"></div>
                 </div>
                 <p id="daily-progress-text">0 / 1000 messages</p>
-            </div>
-            
-            <div class="card">
-                <h2>📋 Message Queue</h2>
-                <button id="start-processing" class="btn btn-secondary" style="margin-bottom: 15px;">Start Processing Queue</button>
-                <div id="queue-container">
-                    <p>No messages in queue</p>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>📱 Contacts</h2>
-                <button id="load-contacts" class="btn">Load Contacts</button>
-                <div id="contacts-container" class="contacts-list" style="display: none;">
-                    <!-- Contacts will be loaded here -->
-                </div>
             </div>
             
             <div class="card" style="grid-column: 1 / -1;">
@@ -829,6 +859,110 @@
                 }
             } catch (error) {
                 showAlert('Failed to start processing', 'error');
+            }
+        });
+
+        // CSV Upload functionality
+        document.getElementById('upload-csv-btn').addEventListener('click', async () => {
+            const fileInput = document.getElementById('csv-upload');
+            const statusDiv = document.getElementById('csv-upload-status');
+            const uploadBtn = document.getElementById('upload-csv-btn');
+            
+            if (!fileInput.files[0]) {
+                showAlert('Please select a CSV file first', 'error');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showAlert('Please select a valid CSV file', 'error');
+                return;
+            }
+            
+            // Show upload status
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = '<div style="color: #007bff;">📤 Uploading CSV file...</div>';
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '⏳ Uploading...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('csvFile', file);
+                
+                const response = await fetch('/api/upload-csv', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    statusDiv.innerHTML = `
+                        <div style="color: #28a745; padding: 10px; background: #d4edda; border-radius: 5px; border: 1px solid #c3e6cb;">
+                            <strong>✅ Upload Successful!</strong><br>
+                            📄 File: ${result.fileName}<br>
+                            📊 Contacts: ${result.totalCount}<br>
+                            📋 Columns: ${result.columnsDetected.nameColumn}, ${result.columnsDetected.phoneColumn}<br>
+                            ${result.preview}
+                        </div>
+                    `;
+                    
+                    // Show preview of uploaded contacts
+                    if (result.contacts && result.contacts.length > 0) {
+                        statusDiv.innerHTML += `
+                            <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                                <strong>Preview (first ${Math.min(result.contacts.length, 10)} contacts):</strong><br>
+                                <table style="width: 100%; margin-top: 5px; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="background: #e9ecef;">
+                                            <th style="padding: 5px; border: 1px solid #ddd;">Name</th>
+                                            <th style="padding: 5px; border: 1px solid #ddd;">Phone Number</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${result.contacts.map(contact => `
+                                            <tr>
+                                                <td style="padding: 5px; border: 1px solid #ddd;">${contact.Name}</td>
+                                                <td style="padding: 5px; border: 1px solid #ddd;">${contact.PhoneNumber}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                    }
+                    
+                    showAlert(`Successfully uploaded ${result.totalCount} contacts from ${result.fileName}`, 'success');
+                    
+                    // Clear the file input
+                    fileInput.value = '';
+                    
+                    // Auto-load the uploaded contacts
+                    setTimeout(() => {
+                        document.getElementById('load-contacts').click();
+                    }, 1000);
+                    
+                } else {
+                    statusDiv.innerHTML = `
+                        <div style="color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 5px; border: 1px solid #f5c6cb;">
+                            <strong>❌ Upload Failed!</strong><br>
+                            ${result.error}
+                        </div>
+                    `;
+                    showAlert(result.error, 'error');
+                }
+                
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div style="color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 5px; border: 1px solid #f5c6cb;">
+                        <strong>❌ Upload Error!</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+                showAlert('Failed to upload CSV file: ' + error.message, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📤 Upload CSV File';
             }
         });
 
