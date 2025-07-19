@@ -1073,22 +1073,48 @@ class SafeWhatsAppBot {
                 throw new Error('WhatsApp client not initialized');
             }
             
+            // Check if client is ready using multiple methods
             let clientState;
+            let isReady = false;
+            
             try {
+                // Try to get state with timeout
                 clientState = await Promise.race([
                     this.client.getState(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('State check timeout')), 5000))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('State check timeout')), 3000))
                 ]);
+                console.log(`📱 [SEND] Client state at ${new Date().toLocaleTimeString()}:`, clientState);
+                
+                // Check if state indicates readiness
+                isReady = clientState === 'CONNECTED';
             } catch (stateError) {
-                console.error(`❌ [SEND] Client state check failed:`, stateError.message);
-                throw new Error(`Client state unavailable: ${stateError.message}`);
+                console.log(`⚠️ [SEND] State check failed, trying alternative method:`, stateError.message);
+                clientState = null;
             }
             
-            console.log(`📱 [SEND] Client state at ${new Date().toLocaleTimeString()}:`, clientState);
-            
-            if (!clientState || clientState !== 'CONNECTED') {
-                throw new Error(`Client not connected. State: ${clientState || 'unknown'}`);
+            // If state check failed or returned null, try alternative validation
+            if (!isReady) {
+                try {
+                    // Try to check if we can access WhatsApp info (indicates connection)
+                    const info = await Promise.race([
+                        this.client.info,
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Info check timeout')), 2000))
+                    ]);
+                    
+                    if (info && info.wid) {
+                        console.log(`✅ [SEND] Client info available, treating as connected`);
+                        isReady = true;
+                    }
+                } catch (infoError) {
+                    console.log(`⚠️ [SEND] Info check also failed:`, infoError.message);
+                }
             }
+            
+            if (!isReady) {
+                throw new Error(`Client not ready. State: ${clientState || 'unknown'}, Info check failed`);
+            }
+            
+            console.log(`✅ [SEND] Client validated as ready at ${new Date().toLocaleTimeString()}`);
 
             console.log(`📞 [SEND] Sending message to WhatsApp API at ${new Date().toLocaleTimeString()}...`);
             console.log(`📧 [SEND] Target: ${messageObj.number}`);
