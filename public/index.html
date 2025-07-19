@@ -672,6 +672,9 @@
             if (connectionWaitingBanner) {
                 connectionWaitingBanner.style.display = 'none';
             }
+            
+            // Hide QR code automatically when connected
+            hideQRCode();
         });
 
         socket.on('disconnected', (data) => {
