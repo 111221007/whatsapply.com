@@ -410,7 +410,7 @@
                 <form id="message-form">
                     <div class="form-group">
                         <label for="phone-number">Phone Number (with country code)</label>
-                        <input type="tel" id="phone-number" placeholder="+1234567890" required>
+                        <input type="tel" id="phone-number" placeholder="9199999999" required>
                         <button type="button" id="validate-number" class="btn btn-secondary" style="margin-top: 10px;">Validate Number</button>
                     </div>
                     
@@ -470,9 +470,9 @@
                 
                 <!-- CSV Upload Section -->
                 <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
-                    <h3 style="margin: 0 0 10px 0; color: #495057;">📁 Upload CSV File</h3>
+                    <h3 style="margin: 0 0 10px 0; color: #495057;">📁 Upload CSV File for Bulk Messaging</h3>
                     <p style="margin: 0 0 10px 0; font-size: 14px; color: #6c757d;">
-                        Upload a CSV file with <strong>Name</strong> and <strong>PhoneNumber</strong> columns from your computer
+                        Upload a CSV file with <strong>Name</strong> and <strong>PhoneNumber</strong> columns to enable bulk messaging
                     </p>
                     
                     <div style="margin-bottom: 10px;">
@@ -483,7 +483,7 @@
                     </div>
                     
                     <button id="upload-csv-btn" class="btn" style="background: #007bff; color: white; margin-right: 10px;">
-                        📤 Upload CSV File
+                        📤 Upload CSV File and Enable Bulk Messaging
                     </button>
                     
                     <div id="csv-upload-status" style="margin-top: 10px; display: none;"></div>
@@ -974,9 +974,9 @@
                     // Clear the file input
                     fileInput.value = '';
                     
-                    // Auto-load the uploaded contacts
+                    // Auto-load the uploaded contacts for bulk messaging
                     setTimeout(() => {
-                        document.getElementById('load-contacts').click();
+                        loadContactsForBulkMessaging(result.contacts);
                     }, 1000);
                     
                 } else {
@@ -1003,176 +1003,167 @@
             }
         });
 
-        document.getElementById('load-contacts').addEventListener('click', async () => {
-            try {
-                const response = await fetch('/api/load-contacts');
-                const result = await response.json();
-                
-                if (!result.success) {
-                    showAlert(result.error, 'error');
-                    return;
-                }
-                
-                const container = document.getElementById('contacts-container');
-                container.innerHTML = '';
-                container.style.display = 'block';
-                
-                // Add header with bulk action controls
-                const headerDiv = document.createElement('div');
-                headerDiv.style.cssText = `
-                    padding: 15px;
-                    background: #f8f9fa;
-                    border-bottom: 1px solid #ddd;
-                    margin-bottom: 10px;
-                `;
-                headerDiv.innerHTML = `
-                    <h3 style="margin: 0 0 10px 0;">📋 Loaded Contacts (${result.count})</h3>
-                    <div style="margin-bottom: 10px;">
-                        <strong>All Phone Numbers:</strong><br>
-                        <textarea readonly style="width: 100%; height: 60px; font-size: 12px;">${result.phoneNumbers}</textarea>
-                    </div>
-                    <div style="margin-bottom: 10px;">
-                        <label><strong>Bulk Message Template:</strong></label><br>
-                        <textarea id="bulk-message" placeholder="Hello {name}, Thank you for traveling with us!" style="width: 100%; height: 80px;">Hello {name}, Thank you for traveling with us!</textarea>
-                    </div>
-                    <div style="margin-bottom: 10px;">
-                        <label><strong>Attachment (Optional):</strong></label><br>
-                        <input type="file" id="bulk-attachment" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                        <small style="color: #666; font-size: 12px; display: block; margin-top: 5px;">
-                            📎 Supported: Images, Videos, Audio, PDF, Documents (Max 16MB)
-                        </small>
-                    </div>
-                    <div id="bulk-attachment-preview" style="display: none; margin-bottom: 10px; padding: 10px; background: #f0f8f0; border-radius: 5px; border: 1px solid #25d366;">
-                        <div id="bulk-preview-content"></div>
-                        <button type="button" id="remove-bulk-attachment" style="margin-top: 5px; padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                            ❌ Remove Attachment
-                        </button>
-                    </div>
-                    <button id="send-bulk-btn" class="btn" style="background: #25d366; color: white;">
-                        📤 Send Bulk Messages to All Contacts
+        // Load contacts for bulk messaging directly from uploaded CSV data
+        function loadContactsForBulkMessaging(contacts) {
+            const container = document.getElementById('contacts-container');
+            container.innerHTML = '';
+            container.style.display = 'block';
+            
+            // Create phone numbers list
+            const phoneNumbers = contacts.map(contact => contact.PhoneNumber).join('\n');
+            
+            // Add header with bulk action controls
+            const headerDiv = document.createElement('div');
+            headerDiv.style.cssText = `
+                padding: 15px;
+                background: #f8f9fa;
+                border-bottom: 1px solid #ddd;
+                margin-bottom: 10px;
+            `;
+            headerDiv.innerHTML = `
+                <h3 style="margin: 0 0 10px 0;">📋 Ready for Bulk Messaging (${contacts.length} contacts)</h3>
+                <div style="margin-bottom: 10px;">
+                    <strong>All Phone Numbers:</strong><br>
+                    <textarea readonly style="width: 100%; height: 60px; font-size: 12px;">${phoneNumbers}</textarea>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <label><strong>Bulk Message Template:</strong></label><br>
+                    <textarea id="bulk-message" placeholder="Hello {name}, Thank you for traveling with us!" style="width: 100%; height: 80px;">Hello {name}, Thank you for traveling with us!</textarea>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <label><strong>Attachment (Optional):</strong></label><br>
+                    <input type="file" id="bulk-attachment" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <small style="color: #666; font-size: 12px; display: block; margin-top: 5px;">
+                        📎 Supported: Images, Videos, Audio, PDF, Documents (Max 16MB)
+                    </small>
+                </div>
+                <div id="bulk-attachment-preview" style="display: none; margin-bottom: 10px; padding: 10px; background: #f0f8f0; border-radius: 5px; border: 1px solid #25d366;">
+                    <div id="bulk-preview-content"></div>
+                    <button type="button" id="remove-bulk-attachment" style="margin-top: 5px; padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                        ❌ Remove Attachment
                     </button>
-                `;
-                container.appendChild(headerDiv);
-                
-                // Add event listener for bulk messaging button
-                const sendBulkBtn = document.getElementById('send-bulk-btn');
-                if (sendBulkBtn) {
-                    sendBulkBtn.addEventListener('click', sendBulkMessages);
-                }
-                
-                // Add event listeners for bulk attachment handling
-                const bulkAttachmentInput = document.getElementById('bulk-attachment');
-                const bulkAttachmentPreview = document.getElementById('bulk-attachment-preview');
-                const bulkPreviewContent = document.getElementById('bulk-preview-content');
-                const removeBulkAttachmentBtn = document.getElementById('remove-bulk-attachment');
-                
-                if (bulkAttachmentInput) {
-                    bulkAttachmentInput.addEventListener('change', function(e) {
-                        const file = e.target.files[0];
-                        if (file) {
-                            // Check file size (16MB limit)
-                            if (file.size > 16 * 1024 * 1024) {
-                                showAlert('File size must be less than 16MB', 'error');
-                                clearBulkAttachment();
-                                return;
-                            }
-                            showBulkAttachmentPreview(file);
-                        }
-                    });
-                }
-                
-                if (removeBulkAttachmentBtn) {
-                    removeBulkAttachmentBtn.addEventListener('click', clearBulkAttachment);
-                }
-                
-                function showBulkAttachmentPreview(file) {
-                    const fileSize = (file.size / 1024 / 1024).toFixed(2) + ' MB';
-                    let previewHTML = '';
-                    
-                    if (file.type.startsWith('image/')) {
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                            bulkPreviewContent.innerHTML = `
-                                <div style="display: flex; align-items: center; gap: 15px;">
-                                    <img src="${e.target.result}" style="
-                                        max-width: 100px; 
-                                        max-height: 100px; 
-                                        border-radius: 8px;
-                                        object-fit: cover;
-                                    ">
-                                    <div>
-                                        <div style="font-weight: bold; color: #25d366;">📷 Image Attachment</div>
-                                        <div style="font-size: 14px; color: #666;">${file.name}</div>
-                                        <div style="font-size: 12px; color: #999;">${fileSize}</div>
-                                    </div>
-                                </div>
-                            `;
-                        };
-                        reader.readAsDataURL(file);
-                    } else if (file.type.startsWith('video/')) {
-                        previewHTML = `
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <div style="width: 100px; height: 100px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 30px;">🎥</div>
-                                <div>
-                                    <div style="font-weight: bold; color: #25d366;">🎬 Video Attachment</div>
-                                    <div style="font-size: 14px; color: #666;">${file.name}</div>
-                                    <div style="font-size: 12px; color: #999;">${fileSize}</div>
-                                </div>
-                            </div>
-                        `;
-                        bulkPreviewContent.innerHTML = previewHTML;
-                    } else {
-                        const icon = file.type === 'application/pdf' ? '📄' : '📎';
-                        previewHTML = `
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <div style="width: 100px; height: 100px; background: #6c757d; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 30px; color: white;">${icon}</div>
-                                <div>
-                                    <div style="font-weight: bold; color: #25d366;">📁 Document Attachment</div>
-                                    <div style="font-size: 14px; color: #666;">${file.name}</div>
-                                    <div style="font-size: 12px; color: #999;">${fileSize}</div>
-                                </div>
-                            </div>
-                        `;
-                        bulkPreviewContent.innerHTML = previewHTML;
-                    }
-                    
-                    bulkAttachmentPreview.style.display = 'block';
-                }
-                
-                function clearBulkAttachment() {
-                    bulkAttachmentInput.value = '';
-                    bulkAttachmentPreview.style.display = 'none';
-                    bulkPreviewContent.innerHTML = '';
-                }
-                
-                // Add individual contacts
-                result.contacts.forEach(contact => {
-                    const contactDiv = document.createElement('div');
-                    contactDiv.className = 'contact-item';
-                    contactDiv.style.cssText = `
-                        padding: 10px;
-                        border: 1px solid #ddd;
-                        margin-bottom: 5px;
-                        cursor: pointer;
-                        background: white;
-                    `;
-                    contactDiv.innerHTML = `
-                        <strong>👤 ${contact.Name}</strong><br>
-                        <small>📞 ${contact.PhoneNumber}</small>
-                    `;
-                    contactDiv.addEventListener('click', () => {
-                        document.getElementById('phone-number').value = contact.PhoneNumber;
-                        showAlert(`Selected ${contact.Name} - ${contact.PhoneNumber}`, 'info');
-                    });
-                    container.appendChild(contactDiv);
-                });
-                
-                showAlert(`📋 Loaded ${result.count} contacts from CSV file`, 'success');
-            } catch (error) {
-                console.error('Error loading contacts:', error);
-                showAlert('Failed to load contacts. Make sure contacts.csv exists in the project folder.', 'error');
+                </div>
+                <button id="send-bulk-btn" class="btn" style="background: #25d366; color: white;">
+                    📤 Send Bulk Messages to All Contacts
+                </button>
+            `;
+            container.appendChild(headerDiv);
+            
+            // Add event listener for bulk messaging button
+            const sendBulkBtn = document.getElementById('send-bulk-btn');
+            if (sendBulkBtn) {
+                sendBulkBtn.addEventListener('click', sendBulkMessages);
             }
-        });
+            
+            // Add event listeners for bulk attachment handling
+            const bulkAttachmentInput = document.getElementById('bulk-attachment');
+            const bulkAttachmentPreview = document.getElementById('bulk-attachment-preview');
+            const bulkPreviewContent = document.getElementById('bulk-preview-content');
+            const removeBulkAttachmentBtn = document.getElementById('remove-bulk-attachment');
+            
+            if (bulkAttachmentInput) {
+                bulkAttachmentInput.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        // Check file size (16MB limit)
+                        if (file.size > 16 * 1024 * 1024) {
+                            showAlert('File size must be less than 16MB', 'error');
+                            clearBulkAttachment();
+                            return;
+                        }
+                        showBulkAttachmentPreview(file);
+                    }
+                });
+            }
+            
+            if (removeBulkAttachmentBtn) {
+                removeBulkAttachmentBtn.addEventListener('click', clearBulkAttachment);
+            }
+            
+            function showBulkAttachmentPreview(file) {
+                const fileSize = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+                let previewHTML = '';
+                
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        bulkPreviewContent.innerHTML = `
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <img src="${e.target.result}" style="
+                                    max-width: 100px; 
+                                    max-height: 100px; 
+                                    border-radius: 8px;
+                                    object-fit: cover;
+                                ">
+                                <div>
+                                    <div style="font-weight: bold; color: #25d366;">📷 Image Attachment</div>
+                                    <div style="font-size: 14px; color: #666;">${file.name}</div>
+                                    <div style="font-size: 12px; color: #999;">${fileSize}</div>
+                                </div>
+                            </div>
+                        `;
+                    };
+                    reader.readAsDataURL(file);
+                } else if (file.type.startsWith('video/')) {
+                    previewHTML = `
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <div style="width: 100px; height: 100px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 30px;">🎥</div>
+                            <div>
+                                <div style="font-weight: bold; color: #25d366;">🎬 Video Attachment</div>
+                                <div style="font-size: 14px; color: #666;">${file.name}</div>
+                                <div style="font-size: 12px; color: #999;">${fileSize}</div>
+                            </div>
+                        </div>
+                    `;
+                    bulkPreviewContent.innerHTML = previewHTML;
+                } else {
+                    const icon = file.type === 'application/pdf' ? '📄' : '📎';
+                    previewHTML = `
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <div style="width: 100px; height: 100px; background: #6c757d; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 30px; color: white;">${icon}</div>
+                            <div>
+                                <div style="font-weight: bold; color: #25d366;">📁 Document Attachment</div>
+                                <div style="font-size: 14px; color: #666;">${file.name}</div>
+                                <div style="font-size: 12px; color: #999;">${fileSize}</div>
+                            </div>
+                        </div>
+                    `;
+                    bulkPreviewContent.innerHTML = previewHTML;
+                }
+                
+                bulkAttachmentPreview.style.display = 'block';
+            }
+            
+            function clearBulkAttachment() {
+                bulkAttachmentInput.value = '';
+                bulkAttachmentPreview.style.display = 'none';
+                bulkPreviewContent.innerHTML = '';
+            }
+            
+            // Add individual contacts
+            contacts.forEach(contact => {
+                const contactDiv = document.createElement('div');
+                contactDiv.className = 'contact-item';
+                contactDiv.style.cssText = `
+                    padding: 10px;
+                    border: 1px solid #ddd;
+                    margin-bottom: 5px;
+                    cursor: pointer;
+                    background: white;
+                `;
+                contactDiv.innerHTML = `
+                    <strong>👤 ${contact.Name}</strong><br>
+                    <small>📞 ${contact.PhoneNumber}</small>
+                `;
+                contactDiv.addEventListener('click', () => {
+                    document.getElementById('phone-number').value = contact.PhoneNumber;
+                    showAlert(`Selected ${contact.Name} - ${contact.PhoneNumber}`, 'info');
+                });
+                container.appendChild(contactDiv);
+            });
+            
+            showAlert(`📋 Loaded ${contacts.length} contacts - Ready for bulk messaging!`, 'success');
+        }
 
         // Bulk messaging function
         async function sendBulkMessages() {
