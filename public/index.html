@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Safe WhatsApp Bot Control Panel</title>
+    <title>Bulk WhatsApp Messaging Bot Control Panel</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * {
@@ -305,7 +305,7 @@
             ⏳ <span style="font-size: 18px;">Wait for the connection...</span>
             <br>
             <span style="font-size: 14px; font-weight: normal; margin-top: 5px; display: inline-block;">
-                🔗 Establishing WhatsApp connection - Please wait
+                🔗 Establishing WhatsApp connection - Please wait for the QR code
             </span>
         </div>
 
@@ -322,13 +322,6 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             display: none;
         ">
-            <div style="margin-bottom: 10px;">
-                🤖 <span style="font-size: 18px;">Bot Authentication Required</span>
-            </div>
-            <div style="font-size: 14px; font-weight: normal; opacity: 0.9;">
-                The bot needs its own WhatsApp authentication (separate from your browser). 
-                <br>You'll need to scan a QR code with your phone to authenticate the bot.
-            </div>
         </div>
         
         <!-- WhatsApp Connection Section - Moved to top -->
@@ -339,18 +332,6 @@
                 <span id="wa-status-icon" style="margin-left: 10px;">❌</span>
             </div>
             
-            <!-- Disconnected State: Show bot authentication -->
-            <div id="disconnected-controls" class="connection-buttons" style="margin-bottom: 15px;">
-                <div style="padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; text-align: center;">
-                    <p style="margin: 0; color: #856404; font-size: 14px;">
-                        💡 <strong>Bot Authentication Required:</strong> The bot needs its own WhatsApp authentication.
-                        <br>Your existing browser session will remain active.
-                    </p>
-                    <button id="show-qr" class="btn" style="background: #25d366; color: white; margin-top: 10px;">
-                        📱 Show QR Code to Authenticate Bot
-                    </button>
-                </div>
-            </div>
             
             <!-- Connected State: Show disconnect option -->
             <div id="connected-controls" class="connection-buttons" style="margin-bottom: 15px; display: none;">
@@ -970,15 +951,7 @@
                     }
                     
                     showAlert(`Successfully uploaded ${result.totalCount} contacts from ${result.fileName}`, 'success');
-                    
-                    // Add the bulk messaging button right after upload success
-                    statusDiv.innerHTML += `
-                        <div style="margin-top: 15px; text-align: center;">
-                            <button id="start-bulk-messaging-btn" class="btn" style="background: #25d366; color: white; padding: 12px 24px; font-size: 16px; font-weight: bold;">
-                                📤 Send Bulk Messages to All Contacts
-                            </button>
-                        </div>
-                    `;
+            
                     
                     // Add event listener for the bulk messaging button
                     document.getElementById('start-bulk-messaging-btn').addEventListener('click', () => {

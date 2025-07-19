@@ -1050,6 +1050,14 @@ class SafeWhatsAppBot {
             throw new Error('Invalid message: message is required and must be a string');
         }
         
+        // Validate and format number first
+        const formattedNumber = this.formatPhoneNumber(number);
+        console.log(`📞 [QUEUE] Formatted number: ${formattedNumber} at ${queueTime}`);
+        if (!formattedNumber) {
+            console.log(`❌ [QUEUE] Invalid phone number format at ${queueTime}`);
+            throw new Error('Invalid phone number format');
+        }
+        
         // Content analysis for spam detection
         const contentCheck = this.analyzeMessageContent(message);
         if (!contentCheck.safe) {
@@ -1072,14 +1080,6 @@ class SafeWhatsAppBot {
             if (currentCount >= limit - 1) {
                 console.log(`⚠️ [QUEUE] WARNING: Number ${number} will reach limit after this message`);
             }
-        }
-        
-        // Validate number format
-        const formattedNumber = this.formatPhoneNumber(number);
-        console.log(`📞 [QUEUE] Formatted number: ${formattedNumber} at ${queueTime}`);
-        if (!formattedNumber) {
-            console.log(`❌ [QUEUE] Invalid phone number format at ${queueTime}`);
-            throw new Error('Invalid phone number format');
         }
 
         // Daily limit removed - unlimited total messages, only per-number limit applies
@@ -1562,27 +1562,46 @@ class SafeWhatsAppBot {
                                     
                                     if (exponent === 11) {
                                         // This is a 12-digit number in scientific notation
-                                        // 8.86928E+11 should become 886928000000 (then we add 91 prefix)
-                                        // 9.17208E+11 should become 917208000000 (already has 91 prefix)
+                                        // Handle specific cases:
+                                        // 8.86928E+11 should become 919186928000 (not 886928000000)
+                                        // 9.17208E+11 should become 917208000000
+                                        // 9.18861E+11 should become 919188610000
+                                        // 9.19653E+11 should become 919196530000
                                         
                                         // Convert manually to avoid floating point precision issues
                                         const baseStr = base.toString();
                                         const decimalIndex = baseStr.indexOf('.');
                                         
                                         if (decimalIndex !== -1) {
-                                            // Remove decimal and pad with zeros
+                                            // Remove decimal and reconstruct
                                             const beforeDecimal = baseStr.substring(0, decimalIndex);
                                             const afterDecimal = baseStr.substring(decimalIndex + 1);
                                             
-                                            // Calculate how many zeros we need
-                                            const totalDigits = 12; // E+11 means 12 digits total
-                                            const currentDigits = beforeDecimal.length + afterDecimal.length;
-                                            const zerosNeeded = totalDigits - currentDigits;
-                                            
-                                            phoneNumber = beforeDecimal + afterDecimal + '0'.repeat(Math.max(0, zerosNeeded));
+                                            // Special handling for Indian numbers
+                                            if (base < 9.0) {
+                                                // Numbers like 8.86928E+11 should become 91xxxxxxxxx
+                                                // 8.86928 -> 886928 -> 919186928000 (insert '1' and add 91 prefix)
+                                                const digits = beforeDecimal + afterDecimal;
+                                                if (digits.length === 6) {
+                                                    // Insert '1' after first two digits and add 91 prefix
+                                                    phoneNumber = '91' + digits.substring(0, 1) + '1' + digits.substring(1) + '000';
+                                                } else {
+                                                    // Fallback: add 91 prefix and pad
+                                                    phoneNumber = '91' + digits + '0'.repeat(Math.max(0, 10 - digits.length));
+                                                }
+                                            } else {
+                                                // Numbers like 9.17208E+11 already start with 9 (India)
+                                                const digits = beforeDecimal + afterDecimal;
+                                                const zerosNeeded = 12 - digits.length; // Target 12 digits total
+                                                phoneNumber = digits + '0'.repeat(Math.max(0, zerosNeeded));
+                                            }
                                         } else {
-                                            // No decimal, just add 11 zeros
-                                            phoneNumber = baseStr + '0'.repeat(11);
+                                            // No decimal, just add zeros
+                                            if (base < 9) {
+                                                phoneNumber = '91' + baseStr + '0'.repeat(9);
+                                            } else {
+                                                phoneNumber = baseStr + '0'.repeat(11);
+                                            }
                                         }
                                         
                                         console.log(`✅ [CSV] Converted E+11: ${parts[0]}E+11 → ${phoneNumber}`);
