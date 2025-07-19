@@ -2,19 +2,33 @@
   "name": "safe-whatsapp-bot",
   "version": "1.0.0",
   "description": "A safe WhatsApp bot built with whatsapp-web.js",
-  "main": "heroku.js",
+  "main": "safe-whatsapp-bot.js",
   "scripts": {
-    "start": "node heroku.js",
-    "dev": "node safe-whatsapp-bot.js"
+    "start": "node safe-whatsapp-bot.js",
+    "dev": "node safe-whatsapp-bot.js",
+    "heroku": "node heroku.js"
   },
   "engines": {
-    "node": "16.x"
+    "node": ">=16.0.0"
   },
   "dependencies": {
+    "@pedroslopez/moduleraid": "^5.0.2",
+    "archiver": "^5.3.1",
+    "csv-parser": "^3.2.0",
     "express": "^4.17.1",
-    "socket.io": "^4.4.1",
-    "qrcode-terminal": "^0.12.0",
+    "file-type": "^16.5.4",
+    "fluent-ffmpeg": "^2.1.3",
+    "fs-extra": "^11.3.0",
+    "mime": "^3.0.0",
     "mongoose": "^6.2.0",
+    "multer": "^2.0.2",
+    "node-fetch": "^2.6.7",
+    "node-webpmux": "^3.2.1",
+    "puppeteer": "^24.14.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "socket.io": "^4.4.1",
+    "whatsapp-web.js": "^1.31.0",
     "wwebjs-mongo": "^1.1.0"
   }
 }

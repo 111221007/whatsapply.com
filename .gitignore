@@ -4,6 +4,9 @@ npm-debug.log
 yarn-error.log
 package-lock.json
 
+# Uploads directory (temporary files)
+uploads/
+
 # WhatsApp web.js auth files (won't be needed with RemoteAuth)
 .wwebjs_auth/
 .wwebjs_cache/

@@ -1,8 +1,11 @@
-const { Client, LocalAuth, RemoteAuth } = require('./index');
+const { Client, LocalAuth, RemoteAuth, MessageMedia } = require('whatsapp-web.js');
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
+const csv = require('csv-parser');
 const { MongoStore } = require('wwebjs-mongo');
 
 class SafeWhatsAppBot {
@@ -102,7 +105,7 @@ class SafeWhatsAppBot {
             this.client = new Client({
                 authStrategy: authStrategy,
                 puppeteer: { 
-                    headless: isProduction ? true : false,
+                    headless: true, // Always headless for web deployment
                     args: [
                         '--no-sandbox',
                         '--disable-setuid-sandbox',
@@ -115,7 +118,21 @@ class SafeWhatsAppBot {
                         '--disable-features=VizDisplayCompositor',
                         '--disable-background-timer-throttling',
                         '--disable-backgrounding-occluded-windows',
-                        '--disable-renderer-backgrounding'
+                        '--disable-renderer-backgrounding',
+                        '--disable-default-apps',
+                        '--disable-extensions',
+                        '--disable-translate',
+                        '--disable-plugins',
+                        '--disable-sync',
+                        '--disable-dev-shm-usage',
+                        '--no-default-browser-check',
+                        '--disable-background-networking',
+                        '--disable-client-side-phishing-detection',
+                        '--disable-component-extensions-with-background-pages',
+                        '--disable-ipc-flooding-protection',
+                        '--ignore-certificate-errors',
+                        '--ignore-ssl-errors',
+                        '--ignore-certificate-errors-spki-list'
                     ]
                 }
             });
@@ -181,14 +198,19 @@ class SafeWhatsAppBot {
             this.isConnected = true;
             const info = this.client.info;
             console.log('[STATUS] WhatsApp connected and ready.');
-            console.log(`[INFO] Connected as: ${info.pushname} (${info.wid.user})`);
+            
+            // Safe info access
+            const pushname = info?.pushname || 'Unknown';
+            const userId = info?.wid?.user || 'Unknown';
+            console.log(`[INFO] Connected as: ${pushname} (${userId})`);
+            
             this.broadcastToClients('ready', { 
                 status: 'ready', 
                 message: 'Successfully connected to WhatsApp',
                 info: {
-                    name: info.pushname,
-                    number: info.wid.user,
-                    platform: info.platform
+                    name: pushname,
+                    number: userId,
+                    platform: info?.platform || 'Unknown'
                 }
             });
             this.startMessageProcessor();
@@ -231,6 +253,31 @@ class SafeWhatsAppBot {
         this.app.use(express.static(path.join(__dirname, 'public')));
         this.app.use(express.json());
 
+        // Multer configuration for file uploads
+        const upload = multer({
+            dest: 'uploads/',
+            limits: {
+                fileSize: 16 * 1024 * 1024 // 16MB limit
+            },
+            fileFilter: (req, file, cb) => {
+                // Allow images, videos, documents, audio
+                const allowedTypes = [
+                    'image/', 'video/', 'audio/', 'application/pdf', 
+                    'application/msword', 'application/vnd.openxmlformats-officedocument',
+                    'application/zip', 'application/x-rar-compressed', 'text/'
+                ];
+                
+                const isAllowed = allowedTypes.some(type => file.mimetype.startsWith(type));
+                if (!isAllowed) {
+                    return cb(new Error('File type not supported'));
+                }
+                cb(null, true);
+            }
+        });
+
+        // Store upload middleware for use in endpoints
+        this.upload = upload;
+
         // API endpoints
         this.app.post('/api/send-message', async (req, res) => {
             try {
@@ -255,6 +302,66 @@ class SafeWhatsAppBot {
                 res.json(result);
             } catch (error) {
                 console.error(`❌ [API] send-message error:`, error.message);
+                res.status(500).json({ 
+                    success: false, 
+                    error: error.message 
+                });
+            }
+        });
+
+        // Media message endpoint
+        this.app.post('/api/send-media', upload.single('media'), async (req, res) => {
+            try {
+                console.log(`📮 [API] send-media request received:`, {
+                    body: req.body,
+                    file: req.file ? { 
+                        originalname: req.file.originalname, 
+                        mimetype: req.file.mimetype, 
+                        size: req.file.size 
+                    } : null,
+                    timestamp: new Date().toISOString()
+                });
+                
+                const { number, message, priority } = req.body;
+                
+                if (!number || !req.file) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'Number and media file are required' 
+                    });
+                }
+
+                try {
+                    // Create MessageMedia from uploaded file with proper MIME type
+                    const media = MessageMedia.fromFilePath(req.file.path);
+                    media.filename = req.file.originalname;
+                    media.mimetype = req.file.mimetype; // Explicitly set the MIME type
+                    
+                    // For images, ensure they display inline
+                    if (req.file.mimetype.startsWith('image/')) {
+                        console.log(`📷 [MEDIA] Processing image: ${req.file.originalname} (${req.file.mimetype})`);
+                    } else if (req.file.mimetype.startsWith('video/')) {
+                        console.log(`🎥 [MEDIA] Processing video: ${req.file.originalname} (${req.file.mimetype})`);
+                    } else {
+                        console.log(`📎 [MEDIA] Processing document: ${req.file.originalname} (${req.file.mimetype})`);
+                    }
+                    
+                    const result = await this.queueMediaMessage(number, media, message, priority);
+                    
+                    // Clean up uploaded file
+                    fs.unlinkSync(req.file.path);
+                    
+                    res.json(result);
+                } catch (mediaError) {
+                    console.error(`❌ [API] Media processing error:`, mediaError.message);
+                    // Clean up file on error
+                    if (req.file && fs.existsSync(req.file.path)) {
+                        fs.unlinkSync(req.file.path);
+                    }
+                    throw mediaError;
+                }
+            } catch (error) {
+                console.error(`❌ [API] send-media error:`, error.message);
                 res.status(500).json({ 
                     success: false, 
                     error: error.message 
@@ -342,6 +449,198 @@ class SafeWhatsAppBot {
             console.log('🚀 Manually starting message processor...');
             this.startMessageProcessor();
             res.json({ success: true, message: 'Message processing started' });
+        });
+
+        // CSV Contact loading endpoints
+        this.app.get('/api/load-contacts', async (req, res) => {
+            try {
+                const csvPath = path.join(__dirname, 'contacts.csv');
+                
+                if (!fs.existsSync(csvPath)) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'contacts.csv file not found. Please upload a CSV file with Name and PhoneNumber columns.'
+                    });
+                }
+
+                const contacts = await this.loadContactsFromCSV(csvPath);
+                const phoneNumbers = contacts.map(contact => contact.PhoneNumber).join(', ');
+                
+                res.json({
+                    success: true,
+                    contacts: contacts,
+                    phoneNumbers: phoneNumbers,
+                    count: contacts.length,
+                    message: `Loaded ${contacts.length} contacts from CSV`
+                });
+            } catch (error) {
+                console.error('❌ Error loading contacts:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        this.app.post('/api/send-bulk-messages', async (req, res) => {
+            try {
+                const { messageTemplate, priority = 'normal' } = req.body;
+                
+                if (!messageTemplate) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Message template is required'
+                    });
+                }
+
+                const csvPath = path.join(__dirname, 'contacts.csv');
+                if (!fs.existsSync(csvPath)) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'contacts.csv file not found'
+                    });
+                }
+
+                const contacts = await this.loadContactsFromCSV(csvPath);
+                const results = [];
+
+                for (const contact of contacts) {
+                    try {
+                        // Replace {name} placeholder with actual name
+                        const personalizedMessage = messageTemplate.replace(/{name}/g, contact.Name);
+                        
+                        const result = await this.queueMessage(contact.PhoneNumber, personalizedMessage, priority);
+                        results.push({
+                            name: contact.Name,
+                            number: contact.PhoneNumber,
+                            success: true,
+                            messageId: result.messageId
+                        });
+                    } catch (error) {
+                        console.error(`❌ Error queuing message for ${contact.Name}:`, error);
+                        results.push({
+                            name: contact.Name,
+                            number: contact.PhoneNumber,
+                            success: false,
+                            error: error.message
+                        });
+                    }
+                }
+
+                const successCount = results.filter(r => r.success).length;
+                const failureCount = results.length - successCount;
+
+                res.json({
+                    success: true,
+                    message: `Queued ${successCount} messages successfully, ${failureCount} failed`,
+                    results: results,
+                    summary: {
+                        total: results.length,
+                        success: successCount,
+                        failed: failureCount
+                    }
+                });
+            } catch (error) {
+                console.error('❌ Error sending bulk messages:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Bulk media messaging endpoint
+        this.app.post('/api/send-bulk-media', this.upload.single('media'), async (req, res) => {
+            try {
+                const { messageTemplate, priority = 'normal' } = req.body;
+                const mediaFile = req.file;
+                
+                if (!mediaFile) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Media file is required'
+                    });
+                }
+
+                const csvPath = path.join(__dirname, 'contacts.csv');
+                if (!fs.existsSync(csvPath)) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'contacts.csv file not found'
+                    });
+                }
+
+                console.log(`📎 Starting bulk media send with file: ${mediaFile.originalname}`);
+
+                const contacts = await this.loadContactsFromCSV(csvPath);
+                const results = [];
+
+                // Create MessageMedia object with proper MIME type handling
+                const media = MessageMedia.fromFilePath(mediaFile.path);
+                media.filename = mediaFile.originalname;
+                media.mimetype = mediaFile.mimetype; // Explicitly set the MIME type
+                
+                // Log media type for debugging
+                if (mediaFile.mimetype.startsWith('image/')) {
+                    console.log(`📷 [BULK] Processing bulk image: ${mediaFile.originalname} (${mediaFile.mimetype})`);
+                } else if (mediaFile.mimetype.startsWith('video/')) {
+                    console.log(`🎥 [BULK] Processing bulk video: ${mediaFile.originalname} (${mediaFile.mimetype})`);
+                } else {
+                    console.log(`📎 [BULK] Processing bulk document: ${mediaFile.originalname} (${mediaFile.mimetype})`);
+                }
+                
+                for (const contact of contacts) {
+                    try {
+                        // Replace {name} placeholder with actual name in caption
+                        const personalizedCaption = messageTemplate ? messageTemplate.replace(/{name}/g, contact.Name) : '';
+                        
+                        const result = await this.queueMediaMessage(contact.PhoneNumber, media, personalizedCaption, priority);
+                        results.push({
+                            name: contact.Name,
+                            number: contact.PhoneNumber,
+                            success: true,
+                            messageId: result.messageId
+                        });
+                        
+                        console.log(`✅ Media message queued for ${contact.Name} (${contact.PhoneNumber})`);
+                    } catch (error) {
+                        console.error(`❌ Error queuing media message for ${contact.Name}:`, error);
+                        results.push({
+                            name: contact.Name,
+                            number: contact.PhoneNumber,
+                            success: false,
+                            error: error.message
+                        });
+                    }
+                }
+
+                // Clean up uploaded file
+                try {
+                    fs.unlinkSync(mediaFile.path);
+                } catch (error) {
+                    console.warn('⚠️ Failed to delete uploaded file:', error.message);
+                }
+
+                const successCount = results.filter(r => r.success).length;
+                const failureCount = results.length - successCount;
+
+                res.json({
+                    success: true,
+                    message: `Queued ${successCount} media messages successfully, ${failureCount} failed`,
+                    results: results,
+                    summary: {
+                        total: results.length,
+                        success: successCount,
+                        failed: failureCount
+                    }
+                });
+            } catch (error) {
+                console.error('❌ Error sending bulk media messages:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
         });
 
         // Debug endpoint for real-time monitoring
@@ -537,6 +836,112 @@ class SafeWhatsAppBot {
         return result;
     }
 
+    async queueMediaMessage(number, media, caption = '', priority = 'normal') {
+        const queueTime = new Date().toLocaleTimeString();
+        console.log(`📥 [QUEUE] queueMediaMessage called at ${queueTime} for ${number}, priority: ${priority}`);
+        
+        // Validate inputs
+        if (!number || number === 'undefined' || typeof number !== 'string') {
+            console.error(`❌ [QUEUE] Invalid number input: ${number} (type: ${typeof number})`);
+            throw new Error('Invalid phone number: number is required and must be a string');
+        }
+        
+        if (!media) {
+            console.error(`❌ [QUEUE] Invalid media input: ${media}`);
+            throw new Error('Invalid media: media object is required');
+        }
+        
+        // Validate number format
+        const formattedNumber = this.formatPhoneNumber(number);
+        console.log(`📞 [QUEUE] Formatted number: ${formattedNumber} at ${queueTime}`);
+        if (!formattedNumber) {
+            console.log(`❌ [QUEUE] Invalid phone number format at ${queueTime}`);
+            throw new Error('Invalid phone number format');
+        }
+
+        // Check daily limit
+        console.log(`📊 [QUEUE] Daily count check at ${queueTime}: ${this.stats.dailyCount}/${this.rateLimiter.maxPerDay}`);
+        if (this.stats.dailyCount >= this.rateLimiter.maxPerDay) {
+            console.log(`❌ [QUEUE] Daily message limit reached at ${queueTime}`);
+            throw new Error('Daily message limit reached');
+        }
+
+        // Validate WhatsApp user
+        console.log(`🔍 [QUEUE] Validating WhatsApp user: ${formattedNumber} at ${queueTime}`);
+        console.log(`🔗 [QUEUE] WhatsApp connected: ${this.isConnected} at ${queueTime}`);
+        
+        const isValid = await this.isValidWhatsAppUser(formattedNumber);
+        console.log(`✅ [QUEUE] Number validation result: ${isValid} at ${new Date().toLocaleTimeString()}`);
+        
+        if (!isValid && this.isConnected) {
+            console.log(`❌ [QUEUE] Number is not a valid WhatsApp user at ${new Date().toLocaleTimeString()}`);
+            throw new Error('Number is not a valid WhatsApp user. Please check the number and try again.');
+        } else if (!isValid && !this.isConnected) {
+            console.log(`⚠️ [QUEUE] Cannot verify WhatsApp user (not connected), allowing number at ${new Date().toLocaleTimeString()}`);
+        }
+
+        const messageObj = {
+            id: Date.now() + Math.random(),
+            number: formattedNumber,
+            media,
+            caption,
+            priority,
+            timestamp: Date.now(),
+            queuedAt: new Date().toLocaleTimeString(),
+            status: 'queued',
+            retries: 0,
+            type: 'media'
+        };
+
+        console.log(`📝 [QUEUE] Created media message object at ${new Date().toLocaleTimeString()}:`, {
+            id: messageObj.id,
+            number: messageObj.number,
+            caption: messageObj.caption ? messageObj.caption.substring(0, 50) + '...' : 'No caption',
+            priority: messageObj.priority,
+            queuedAt: messageObj.queuedAt,
+            type: messageObj.type,
+            mediaType: media.mimetype || 'unknown'
+        });
+
+        // Add to queue based on priority
+        if (priority === 'high') {
+            this.messageQueue.unshift(messageObj);
+            console.log(`⚡ [QUEUE] Added HIGH PRIORITY media message to front of queue at ${new Date().toLocaleTimeString()}`);
+        } else {
+            this.messageQueue.push(messageObj);
+            console.log(`📬 [QUEUE] Added NORMAL priority media message to end of queue at ${new Date().toLocaleTimeString()}`);
+        }
+
+        console.log(`📊 [QUEUE] Queue status at ${new Date().toLocaleTimeString()}: Length=${this.messageQueue.length}, Processing=${this.isProcessing}, Connected=${this.isConnected}`);
+
+        this.broadcastToClients('message_queued', messageObj);
+        
+        // Start message processor if not already running
+        if (!this.isProcessing && this.isConnected) {
+            console.log(`🚀 [QUEUE] Starting message processor at ${new Date().toLocaleTimeString()}...`);
+            this.startMessageProcessor();
+        } else {
+            console.log(`⚠️ [QUEUE] Not starting processor at ${new Date().toLocaleTimeString()}: processing=${this.isProcessing}, connected=${this.isConnected}`);
+            if (!this.isConnected) {
+                console.log(`🔌 [QUEUE] WhatsApp not connected - media message will wait in queue`);
+            }
+            if (this.isProcessing) {
+                console.log(`⚙️ [QUEUE] Processor already running - media message added to queue`);
+            }
+        }
+        
+        const result = {
+            success: true,
+            messageId: messageObj.id,
+            queuePosition: this.messageQueue.length,
+            queuedAt: messageObj.queuedAt,
+            type: 'media'
+        };
+        
+        console.log(`✅ [QUEUE] Media message queued successfully at ${new Date().toLocaleTimeString()}: Position ${result.queuePosition} in queue`);
+        return result;
+    }
+
     async startMessageProcessor() {
         console.log('🔄 [PROCESSOR] startMessageProcessor called at', new Date().toLocaleTimeString());
         
@@ -554,9 +959,14 @@ class SafeWhatsAppBot {
         while (this.messageQueue.length > 0 && this.isConnected) {
             const message = this.messageQueue.shift();
             const processingTime = new Date().toLocaleTimeString();
+            const messageContent = message.type === 'media' 
+                ? (message.caption || 'Media message') 
+                : (message.message || 'No content');
+            
             console.log(`📤 [PROCESSOR] Processing message at ${processingTime}:`, {
                 number: message.number,
-                message: message.message.substring(0, 50) + '...',
+                message: messageContent.substring(0, 50) + '...',
+                type: message.type || 'text',
                 queuedAt: new Date(message.timestamp).toLocaleTimeString()
             });
             
@@ -638,10 +1048,22 @@ class SafeWhatsAppBot {
 
             console.log(`📞 [SEND] Sending message to WhatsApp API at ${new Date().toLocaleTimeString()}...`);
             console.log(`📧 [SEND] Target: ${messageObj.number}`);
-            console.log(`💬 [SEND] Content: ${messageObj.message}`);
             
+            let result;
             const apiStartTime = Date.now();
-            const result = await this.client.sendMessage(messageObj.number, messageObj.message);
+            
+            if (messageObj.type === 'media') {
+                console.log(`� [SEND] Media Type: ${messageObj.media.mimetype || 'unknown'}`);
+                console.log(`📝 [SEND] Caption: ${messageObj.caption || 'No caption'}`);
+                
+                result = await this.client.sendMessage(messageObj.number, messageObj.media, { 
+                    caption: messageObj.caption || '' 
+                });
+            } else {
+                console.log(`💬 [SEND] Content: ${messageObj.message}`);
+                result = await this.client.sendMessage(messageObj.number, messageObj.message);
+            }
+            
             const apiEndTime = Date.now();
             const apiDuration = ((apiEndTime - apiStartTime) / 1000).toFixed(2);
             
@@ -682,6 +1104,55 @@ class SafeWhatsAppBot {
                 throw error;
             }
         }
+    }
+
+    async loadContactsFromCSV(csvPath) {
+        return new Promise((resolve, reject) => {
+            const contacts = [];
+            
+            fs.createReadStream(csvPath)
+                .pipe(csv())
+                .on('data', (row) => {
+                    // Handle different possible column names
+                    const name = row['Name'] || row['name'] || row['NAME'] || 'Unknown';
+                    let phoneNumber = row['PhoneNumber'] || row['phonenumber'] || row['PHONENUMBER'] || 
+                                    row['Phone'] || row['phone'] || row['PHONE'] || '';
+                    
+                    // Handle Excel scientific notation (e.g., 9.17208E+11)
+                    if (phoneNumber && typeof phoneNumber === 'string') {
+                        // Convert scientific notation to regular number
+                        if (phoneNumber.includes('E+') || phoneNumber.includes('e+')) {
+                            phoneNumber = parseFloat(phoneNumber).toString();
+                        }
+                        
+                        // Remove any decimal points that might be left
+                        phoneNumber = phoneNumber.replace(/\./g, '');
+                        
+                        // Clean and format the number
+                        phoneNumber = phoneNumber.replace(/\D/g, ''); // Remove non-digits
+                        
+                        // Add country code if missing (assuming India +91)
+                        if (phoneNumber.length === 10) {
+                            phoneNumber = '91' + phoneNumber;
+                        }
+                    }
+                    
+                    if (name && phoneNumber) {
+                        contacts.push({
+                            Name: name,
+                            PhoneNumber: phoneNumber
+                        });
+                    }
+                })
+                .on('end', () => {
+                    console.log(`📋 [CSV] Loaded ${contacts.length} contacts from CSV`);
+                    resolve(contacts);
+                })
+                .on('error', (error) => {
+                    console.error('❌ [CSV] Error reading CSV file:', error);
+                    reject(error);
+                });
+        });
     }
 
     async isValidWhatsAppUser(number) {
