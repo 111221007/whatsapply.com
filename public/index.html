@@ -971,13 +971,31 @@
                     
                     showAlert(`Successfully uploaded ${result.totalCount} contacts from ${result.fileName}`, 'success');
                     
+                    // Add the bulk messaging button right after upload success
+                    statusDiv.innerHTML += `
+                        <div style="margin-top: 15px; text-align: center;">
+                            <button id="start-bulk-messaging-btn" class="btn" style="background: #25d366; color: white; padding: 12px 24px; font-size: 16px; font-weight: bold;">
+                                📤 Send Bulk Messages to All Contacts
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Add event listener for the bulk messaging button
+                    document.getElementById('start-bulk-messaging-btn').addEventListener('click', () => {
+                        loadContactsForBulkMessaging(result.contacts);
+                        // Scroll to the bulk messaging form
+                        setTimeout(() => {
+                            document.getElementById('contacts-container').scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                    });
+                    
                     // Clear the file input
                     fileInput.value = '';
                     
-                    // Auto-load the uploaded contacts for bulk messaging
-                    setTimeout(() => {
-                        loadContactsForBulkMessaging(result.contacts);
-                    }, 1000);
+                    // Don't auto-load contacts anymore - user needs to click the button
+                    // setTimeout(() => {
+                    //     loadContactsForBulkMessaging(result.contacts);
+                    // }, 1000);
                     
                 } else {
                     statusDiv.innerHTML = `
@@ -1043,9 +1061,11 @@
                         ❌ Remove Attachment
                     </button>
                 </div>
-                <button id="send-bulk-btn" class="btn" style="background: #25d366; color: white;">
-                    📤 Send Bulk Messages to All Contacts
-                </button>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button id="send-bulk-btn" class="btn" style="background: #25d366; color: white; padding: 12px 24px; font-size: 16px;">
+                        📤 Send Messages Now
+                    </button>
+                </div>
             `;
             container.appendChild(headerDiv);
             
