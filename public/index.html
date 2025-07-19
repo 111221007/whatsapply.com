@@ -1572,9 +1572,21 @@
             if (isConnected) {
                 connectionStatus.textContent = 'Connected';
                 connectionStatus.className = 'status-value connected';
+                
+                // Hide the connection waiting banner when connected
+                const connectionWaitingBanner = document.getElementById('connection-waiting-banner');
+                if (connectionWaitingBanner) {
+                    connectionWaitingBanner.style.display = 'none';
+                }
             } else {
                 connectionStatus.textContent = 'Disconnected';
                 connectionStatus.className = 'status-value disconnected';
+                
+                // Show the connection waiting banner when disconnected
+                const connectionWaitingBanner = document.getElementById('connection-waiting-banner');
+                if (connectionWaitingBanner) {
+                    connectionWaitingBanner.style.display = 'block';
+                }
             }
         }
 
