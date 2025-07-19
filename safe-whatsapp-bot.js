@@ -72,40 +72,17 @@ class SafeWhatsAppBot {
             // Use different auth strategy based on environment
             let authStrategy;
             
-            // Check if we're running on Heroku and have a MongoDB URL
-            if (process.env.MONGODB_URI && (isProduction || process.env.HEROKU)) {
-                console.log('🗄️ Using RemoteAuth with MongoDB for persistent sessions');
-                try {
-                    const mongoose = require('mongoose');
-                    mongoose.connect(process.env.MONGODB_URI).then(() => {
-                        console.log('📦 MongoDB connected successfully');
-                    });
-                    const store = new MongoStore({ mongoose: mongoose });
-                    authStrategy = new RemoteAuth({
-                        clientId: 'safe-bot-heroku',
-                        store: store,
-                        backupSyncIntervalMs: 300000
-                    });
-                } catch (error) {
-                    console.error('❌ Failed to setup RemoteAuth:', error);
-                    console.log('⚠️ Falling back to LocalAuth');
-                    authStrategy = new LocalAuth({ 
-                        clientId: 'safe-bot',
-                        dataPath: './.wwebjs_auth/'
-                    });
-                }
-            } else {
-                console.log('📂 Using LocalAuth for local development');
-                authStrategy = new LocalAuth({ 
-                    clientId: 'safe-bot',
-                    dataPath: './.wwebjs_auth/'
-                });
-            }
+            // For Heroku, always use LocalAuth to avoid MongoDB complexity
+            console.log('📂 Using LocalAuth for Heroku deployment');
+            authStrategy = new LocalAuth({ 
+                clientId: 'safe-bot-heroku',
+                dataPath: './.wwebjs_auth/'
+            });
             
             this.client = new Client({
                 authStrategy: authStrategy,
                 puppeteer: { 
-                    headless: true, // Always headless for web deployment
+                    headless: true,
                     args: [
                         '--no-sandbox',
                         '--disable-setuid-sandbox',
@@ -132,7 +109,9 @@ class SafeWhatsAppBot {
                         '--disable-ipc-flooding-protection',
                         '--ignore-certificate-errors',
                         '--ignore-ssl-errors',
-                        '--ignore-certificate-errors-spki-list'
+                        '--ignore-certificate-errors-spki-list',
+                        '--memory-pressure-off',
+                        '--max_old_space_size=512'
                     ]
                 }
             });
@@ -225,15 +204,20 @@ class SafeWhatsAppBot {
                 timestamp: new Date().toISOString()
             });
             
-            // Attempt to reconnect after a short delay
-            setTimeout(() => {
+            // Clear any existing reconnect timeout
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+            }
+            
+            // Attempt to reconnect after a delay
+            this.reconnectTimeout = setTimeout(() => {
                 if (!this.isConnected) {
                     console.log('[STATUS] Attempting to reconnect...');
                     this.initializeWhatsApp().catch(error => {
                         console.error('❌ Reconnection failed:', error);
                     });
                 }
-            }, 5000);
+            }, 10000); // Wait 10 seconds before reconnecting
         });
         
         this.client.on('message', (message) => {
@@ -404,7 +388,7 @@ class SafeWhatsAppBot {
             }
         });
 
-        // QR Code endpoint for manual requests
+        // Enhanced QR Code endpoint for manual requests
         this.app.get('/api/qr', async (req, res) => {
             try {
                 if (!this.client) {
@@ -433,6 +417,51 @@ class SafeWhatsAppBot {
                 res.status(500).json({ 
                     success: false, 
                     error: error.message 
+                });
+            }
+        });
+
+        // Add restart endpoint for troubleshooting
+        this.app.post('/api/restart-whatsapp', async (req, res) => {
+            try {
+                console.log('🔄 [API] WhatsApp restart requested');
+                
+                // Stop current processing
+                this.isProcessing = false;
+                this.isConnected = false;
+                
+                // Destroy existing client
+                if (this.client) {
+                    try {
+                        await this.client.destroy();
+                        console.log('✅ [API] Existing client destroyed');
+                    } catch (error) {
+                        console.log('⚠️ [API] Error destroying client:', error.message);
+                    }
+                }
+                
+                // Clear reconnect timeout
+                if (this.reconnectTimeout) {
+                    clearTimeout(this.reconnectTimeout);
+                }
+                
+                // Restart WhatsApp
+                setTimeout(() => {
+                    console.log('🚀 [API] Restarting WhatsApp client...');
+                    this.initializeWhatsApp().catch(error => {
+                        console.error('❌ [API] Failed to restart WhatsApp:', error);
+                    });
+                }, 2000);
+                
+                res.json({
+                    success: true,
+                    message: 'WhatsApp restart initiated. Please wait for reconnection.'
+                });
+            } catch (error) {
+                console.error('❌ [API] Restart error:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
                 });
             }
         });
@@ -1037,13 +1066,28 @@ class SafeWhatsAppBot {
                 console.log(`✅ [SEND] Rate limit wait completed at ${new Date().toLocaleTimeString()}`);
             }
 
-            // Check if client is connected
+            // Enhanced client connection check
             console.log(`🔗 [SEND] Checking client connection state at ${new Date().toLocaleTimeString()}...`);
-            const clientState = await this.client.getState();
+            
+            if (!this.client) {
+                throw new Error('WhatsApp client not initialized');
+            }
+            
+            let clientState;
+            try {
+                clientState = await Promise.race([
+                    this.client.getState(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('State check timeout')), 5000))
+                ]);
+            } catch (stateError) {
+                console.error(`❌ [SEND] Client state check failed:`, stateError.message);
+                throw new Error(`Client state unavailable: ${stateError.message}`);
+            }
+            
             console.log(`📱 [SEND] Client state at ${new Date().toLocaleTimeString()}:`, clientState);
             
-            if (clientState !== 'CONNECTED') {
-                throw new Error(`Client not connected. State: ${clientState}`);
+            if (!clientState || clientState !== 'CONNECTED') {
+                throw new Error(`Client not connected. State: ${clientState || 'unknown'}`);
             }
 
             console.log(`📞 [SEND] Sending message to WhatsApp API at ${new Date().toLocaleTimeString()}...`);
@@ -1163,8 +1207,28 @@ class SafeWhatsAppBot {
                 return true; // Allow format-valid numbers when not connected
             }
             
+            // Check client state before attempting validation
+            try {
+                const clientState = await this.client.getState();
+                if (clientState !== 'CONNECTED') {
+                    console.log(`⚠️ [VALIDATION] Client not in CONNECTED state (${clientState}), skipping validation for: ${number}`);
+                    return true;
+                }
+            } catch (stateError) {
+                console.log(`⚠️ [VALIDATION] Cannot check client state, skipping validation for: ${number}`);
+                return true;
+            }
+            
             console.log(`🔍 [VALIDATION] Checking WhatsApp registration for: ${number}`);
-            const numberId = await this.client.getNumberId(number);
+            
+            // Add timeout to prevent hanging
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Validation timeout')), 5000);
+            });
+            
+            const validationPromise = this.client.getNumberId(number);
+            const numberId = await Promise.race([validationPromise, timeoutPromise]);
+            
             const isValid = numberId !== null && numberId !== undefined;
             console.log(`✅ [VALIDATION] Result for ${number}: ${isValid ? 'VALID' : 'INVALID'}`);
             return isValid;
