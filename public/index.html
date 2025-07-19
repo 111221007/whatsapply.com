@@ -951,24 +951,14 @@
                     }
                     
                     showAlert(`Successfully uploaded ${result.totalCount} contacts from ${result.fileName}`, 'success');
-            
                     
-                    // Add event listener for the bulk messaging button
-                    document.getElementById('start-bulk-messaging-btn').addEventListener('click', () => {
+                    // Auto-load contacts for bulk messaging
+                    setTimeout(() => {
                         loadContactsForBulkMessaging(result.contacts);
-                        // Scroll to the bulk messaging form
-                        setTimeout(() => {
-                            document.getElementById('contacts-container').scrollIntoView({ behavior: 'smooth' });
-                        }, 100);
-                    });
+                    }, 1000);
                     
                     // Clear the file input
                     fileInput.value = '';
-                    
-                    // Don't auto-load contacts anymore - user needs to click the button
-                    // setTimeout(() => {
-                    //     loadContactsForBulkMessaging(result.contacts);
-                    // }, 1000);
                     
                 } else {
                     statusDiv.innerHTML = `
@@ -1502,6 +1492,7 @@
             const disconnectedControls = document.getElementById('disconnected-controls');
             const connectedControls = document.getElementById('connected-controls');
             const sessionBanner = document.getElementById('session-instructions-banner');
+            const connectionWaitingBanner = document.getElementById('connection-waiting-banner');
 
             switch (status) {
                 case 'connected':
@@ -1511,6 +1502,9 @@
                     disconnectedControls.style.display = 'none';
                     connectedControls.style.display = 'block';
                     sessionBanner.style.display = 'none'; // Hide session instructions banner
+                    if (connectionWaitingBanner) {
+                        connectionWaitingBanner.style.display = 'none'; // Hide connection waiting banner
+                    }
                     break;
                 case 'restoring':
                     statusElement.textContent = 'Restoring Session...';
@@ -1519,6 +1513,9 @@
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
                     sessionBanner.style.display = 'none'; // Don't show session banner during session restore
+                    if (connectionWaitingBanner) {
+                        connectionWaitingBanner.style.display = 'block'; // Show waiting banner during session restore
+                    }
                     break;
                 case 'loading':
                     statusElement.textContent = 'Loading WhatsApp...';
@@ -1527,14 +1524,20 @@
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
                     sessionBanner.style.display = 'none'; // Don't show session banner during loading
+                    if (connectionWaitingBanner) {
+                        connectionWaitingBanner.style.display = 'block'; // Show waiting banner during loading
+                    }
                     break;
                 case 'session_required':
                     statusElement.textContent = 'Session Required';
                     statusElement.style.color = '#f39c12';
-                    iconElement.textContent = '�';
+                    iconElement.textContent = '🔑';
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
                     sessionBanner.style.display = 'block'; // Show session instructions banner
+                    if (connectionWaitingBanner) {
+                        connectionWaitingBanner.style.display = 'block'; // Show waiting banner when session required
+                    }
                     break;
                 case 'connecting':
                     statusElement.textContent = 'Connecting...';
@@ -1543,6 +1546,9 @@
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
                     sessionBanner.style.display = 'none'; // Hide during connection attempt
+                    if (connectionWaitingBanner) {
+                        connectionWaitingBanner.style.display = 'block'; // Show waiting banner during connection
+                    }
                     break;
                 case 'disconnected':
                 default:
@@ -1552,6 +1558,9 @@
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
                     sessionBanner.style.display = 'block'; // Show session instructions banner
+                    if (connectionWaitingBanner) {
+                        connectionWaitingBanner.style.display = 'block'; // Show waiting banner when disconnected
+                    }
                     break;
             }
         }
