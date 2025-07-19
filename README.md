@@ -94,6 +94,87 @@ client.initialize();
 Take a look at [example.js][examples] for another examples with additional use cases.  
 For further details on saving and restoring sessions, explore the provided [Authentication Strategies][auth-strategies].
 
+## High-Throughput WhatsApp Bot API
+
+This project includes a production-ready high-throughput WhatsApp bot with comprehensive API endpoints for bulk messaging and monitoring.
+
+### 🚀 Live Production Instance
+
+**Main Application:** https://whatsapply-bot-39691067078e.herokuapp.com/
+
+### 📱 Bot Features
+
+- **High-Throughput Messaging:** 15 messages/minute, 900/hour, unlimited daily
+- **Per-Number Safety:** Maximum 5 messages per unique number per day
+- **Smart Rate Limiting:** Automatic violation prevention and retry logic
+- **CSV Bulk Import:** Upload contact lists for mass messaging
+- **Media Support:** Images, documents, and text messages
+- **Real-time Monitoring:** Live statistics and connection status
+
+### 🔗 API Endpoints
+
+#### Core Messaging APIs
+- **Send Single Message:** `POST /api/send-message`
+- **Send Bulk Messages:** `POST /api/send-bulk`
+- **Upload CSV:** `POST /api/upload-csv`
+
+#### Status & Monitoring APIs
+- **Bot Status:** `GET /api/status`
+- **Debug Status:** `GET /api/debug-status`
+- **Rate Limits:** `GET /api/rate-limits`
+- **Message Stats:** `GET /api/message-stats`
+- **Per-Number Stats:** `GET /api/per-number-stats`
+
+#### Management APIs
+- **Reset Rate Limits:** `POST /api/reset-rate-limits`
+- **Reset Per-Number Limits:** `POST /api/reset-per-number-limits`
+- **Emergency Stop:** `POST /api/emergency-stop`
+
+### 📊 Current Configuration
+
+```javascript
+// Rate Limiting (Aggressive High-Throughput)
+maxPerMinute: 15        // Messages per minute
+maxPerHour: 900         // Messages per hour  
+maxPerDay: Infinity     // Unlimited daily messages
+
+// Per-Number Safety Limits
+maxPerNumber: 5         // Max messages per unique number per day
+numberCooldown: 12hrs   // Cooldown period for numbers
+
+// Timing Optimization
+messageDelay: 4-8s      // Optimized delays between messages
+breakInterval: 5min     // Break every 15 messages
+```
+
+### 🔧 Quick Start API Usage
+
+```bash
+# Check bot status
+curl https://whatsapply-bot-39691067078e.herokuapp.com/api/status
+
+# Send a single message
+curl -X POST https://whatsapply-bot-39691067078e.herokuapp.com/api/send-message \
+  -H "Content-Type: application/json" \
+  -d '{
+    "number": "1234567890",
+    "message": "Hello from WhatsApp Bot!"
+  }'
+
+# Get current rate limits
+curl https://whatsapply-bot-39691067078e.herokuapp.com/api/rate-limits
+
+# View message statistics
+curl https://whatsapply-bot-39691067078e.herokuapp.com/api/message-stats
+```
+
+### 🎯 Use Cases
+
+- **Marketing Campaigns:** Bulk messaging with per-contact limits
+- **Customer Support:** Automated responses and notifications  
+- **Event Broadcasting:** Mass announcements with safety controls
+- **Lead Generation:** Targeted messaging with compliance tracking
+
 
 ## Supported features
 
