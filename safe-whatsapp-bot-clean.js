@@ -41,31 +41,8 @@ class SafeWhatsAppBot {
     async initializeWhatsApp() {
         try {
             console.log('📱 Creating WhatsApp client...');
-            
-            // Check for existing session
-            const sessionPath = './.wwebjs_auth/session-safe-bot';
-            const fs = require('fs');
-            const sessionExists = fs.existsSync(sessionPath);
-            
-            if (sessionExists) {
-                console.log('🔑 Found existing bot session - attempting to restore...');
-                this.broadcastToClients('session_restore', { 
-                    message: 'Found existing bot session, attempting to restore connection...',
-                    status: 'restoring'
-                });
-            } else {
-                console.log('🆕 No bot session found - bot will need authentication');
-                this.broadcastToClients('session_required', { 
-                    message: 'Bot needs authentication. The bot will open its own WhatsApp Web instance.',
-                    status: 'session_required'
-                });
-            }
-            
             this.client = new Client({
-                authStrategy: new LocalAuth({ 
-                    clientId: 'safe-bot',
-                    dataPath: './.wwebjs_auth/'
-                }),
+                authStrategy: new LocalAuth({ clientId: 'safe-bot' }),
                 puppeteer: { 
                     headless: process.env.NODE_ENV === 'production' ? true : false,
                     args: [
@@ -75,12 +52,8 @@ class SafeWhatsAppBot {
                         '--disable-accelerated-2d-canvas',
                         '--no-first-run',
                         '--no-zygote',
-                        '--disable-gpu',
-                        '--disable-web-security',
-                        '--disable-features=VizDisplayCompositor',
-                        '--disable-background-timer-throttling',
-                        '--disable-backgrounding-occluded-windows',
-                        '--disable-renderer-backgrounding'
+                        '--single-process',
+                        '--disable-gpu'
                     ]
                 }
             });
@@ -116,40 +89,19 @@ class SafeWhatsAppBot {
 
     setupEventHandlers() {
         this.client.on('qr', (qr) => {
-            console.log('[STATUS] QR code received. Bot needs authentication.');
+            console.log('[STATUS] QR code received. Scan to connect WhatsApp.');
             this.broadcastToClients('qr', { qr });
         });
-        
-        this.client.on('loading_screen', (percent, message) => {
-            console.log(`[STATUS] Loading screen: ${percent}% - ${message}`);
-            this.broadcastToClients('loading', { percent, message });
-        });
-        
         this.client.on('authenticated', () => {
-            console.log('[STATUS] WhatsApp authenticated successfully.');
-            this.broadcastToClients('authenticated', { 
-                status: 'authenticated',
-                message: 'Session authenticated - connecting to WhatsApp...'
-            });
+            console.log('[STATUS] WhatsApp authenticated.');
+            this.broadcastToClients('authenticated', { status: 'authenticated' });
         });
-        
-        this.client.on('auth_failure', (msg) => {
-            console.log('[STATUS] Authentication failed:', msg);
-            this.broadcastToClients('auth_failure', { 
-                message: 'Authentication failed - will need to scan QR code again',
-                error: msg,
-                timestamp: new Date().toISOString()
-            });
-        });
-        
         this.client.on('ready', async () => {
             this.isConnected = true;
             const info = this.client.info;
-            console.log('[STATUS] WhatsApp connected and ready.');
-            console.log(`[INFO] Connected as: ${info.pushname} (${info.wid.user})`);
+            console.log('[STATUS] WhatsApp connected.');
             this.broadcastToClients('ready', { 
                 status: 'ready', 
-                message: 'Successfully connected to WhatsApp',
                 info: {
                     name: info.pushname,
                     number: info.wid.user,
@@ -158,27 +110,11 @@ class SafeWhatsAppBot {
             });
             this.startMessageProcessor();
         });
-        
         this.client.on('disconnected', (reason) => {
             this.isConnected = false;
             console.log('[STATUS] WhatsApp disconnected. Reason:', reason);
-            this.broadcastToClients('disconnected', { 
-                reason,
-                message: 'WhatsApp disconnected - attempting to reconnect...',
-                timestamp: new Date().toISOString()
-            });
-            
-            // Attempt to reconnect after a short delay
-            setTimeout(() => {
-                if (!this.isConnected) {
-                    console.log('[STATUS] Attempting to reconnect...');
-                    this.initializeWhatsApp().catch(error => {
-                        console.error('❌ Reconnection failed:', error);
-                    });
-                }
-            }, 5000);
+            this.broadcastToClients('disconnected', { reason });
         });
-        
         this.client.on('message', (message) => {
             this.broadcastToClients('message_received', {
                 from: message.from,
@@ -199,27 +135,18 @@ class SafeWhatsAppBot {
         // API endpoints
         this.app.post('/api/send-message', async (req, res) => {
             try {
-                console.log(`📮 [API] send-message request received:`, {
-                    body: req.body,
-                    numberType: typeof req.body?.number,
-                    messageType: typeof req.body?.message,
-                    timestamp: new Date().toISOString()
-                });
-                
                 const { number, message, priority } = req.body;
                 
-                if (!number || !message || number === 'undefined' || message === 'undefined') {
-                    console.error(`❌ [API] Invalid request data:`, { number, message, priority });
+                if (!number || !message) {
                     return res.status(400).json({ 
                         success: false, 
-                        error: 'Number and message are required and cannot be undefined' 
+                        error: 'Number and message are required' 
                     });
                 }
 
                 const result = await this.queueMessage(number, message, priority);
                 res.json(result);
             } catch (error) {
-                console.error(`❌ [API] send-message error:`, error.message);
                 res.status(500).json({ 
                     success: false, 
                     error: error.message 
@@ -250,44 +177,9 @@ class SafeWhatsAppBot {
                 res.json({ 
                     success: true, 
                     valid: isValid,
-                    number: formattedNumber,
-                    formattedNumber: formattedNumber,
-                    isWhatsAppNumber: isValid
+                    formattedNumber: formattedNumber
                 });
             } catch (error) {
-                res.status(500).json({ 
-                    success: false, 
-                    error: error.message 
-                });
-            }
-        });
-
-        // QR Code endpoint for manual requests
-        this.app.get('/api/qr', async (req, res) => {
-            try {
-                if (!this.client) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        error: 'WhatsApp client not initialized' 
-                    });
-                }
-
-                // Force client initialization if not started
-                if (!this.isConnected) {
-                    console.log('🔄 Client not connected, attempting to initialize...');
-                    // Don't await this, just trigger it
-                    this.initializeWhatsApp().catch(error => {
-                        console.error('❌ Failed to reinitialize:', error);
-                    });
-                }
-
-                res.json({ 
-                    success: true, 
-                    message: 'QR code generation initiated. Check real-time events for QR code.',
-                    status: this.isConnected ? 'connected' : 'initializing'
-                });
-            } catch (error) {
-                console.error('QR API error:', error);
                 res.status(500).json({ 
                     success: false, 
                     error: error.message 
@@ -402,17 +294,6 @@ class SafeWhatsAppBot {
     async queueMessage(number, message, priority = 'normal') {
         const queueTime = new Date().toLocaleTimeString();
         console.log(`📥 [QUEUE] queueMessage called at ${queueTime} for ${number}, priority: ${priority}`);
-        
-        // Validate inputs
-        if (!number || number === 'undefined' || typeof number !== 'string') {
-            console.error(`❌ [QUEUE] Invalid number input: ${number} (type: ${typeof number})`);
-            throw new Error('Invalid phone number: number is required and must be a string');
-        }
-        
-        if (!message || message === 'undefined' || typeof message !== 'string') {
-            console.error(`❌ [QUEUE] Invalid message input: ${message} (type: ${typeof message})`);
-            throw new Error('Invalid message: message is required and must be a string');
-        }
         
         // Validate number format
         const formattedNumber = this.formatPhoneNumber(number);
@@ -652,42 +533,26 @@ class SafeWhatsAppBot {
     async isValidWhatsAppUser(number) {
         try {
             // If not connected, skip WhatsApp validation and just validate format
-            if (!this.isConnected || !this.client) {
-                console.log(`⚠️ [VALIDATION] WhatsApp not connected, allowing number: ${number}`);
+            if (!this.isConnected) {
                 return true; // Allow format-valid numbers when not connected
             }
-            
-            console.log(`🔍 [VALIDATION] Checking WhatsApp registration for: ${number}`);
             const numberId = await this.client.getNumberId(number);
-            const isValid = numberId !== null && numberId !== undefined;
-            console.log(`✅ [VALIDATION] Result for ${number}: ${isValid ? 'VALID' : 'INVALID'}`);
-            return isValid;
+            return numberId !== null;
         } catch (error) {
-            console.error(`❌ [VALIDATION] Error checking WhatsApp user ${number}:`, error.message);
-            // If there's an error checking, allow the number (fail-safe approach)
             return true;
         }
     }
 
     formatPhoneNumber(number) {
-        // Handle undefined, null, or non-string inputs
-        if (!number || typeof number !== 'string') {
-            console.error(`❌ [FORMAT] Invalid input for phone number: ${number} (type: ${typeof number})`);
-            return null;
-        }
-        
         // Remove all non-numeric characters
         const cleaned = number.replace(/\D/g, '');
         
         // Basic validation
         if (cleaned.length < 10 || cleaned.length > 15) {
-            console.error(`❌ [FORMAT] Invalid phone number length: ${cleaned.length} digits for number: ${cleaned}`);
             return null;
         }
         
-        const formatted = cleaned + '@c.us';
-        console.log(`✅ [FORMAT] Successfully formatted: ${number} -> ${formatted}`);
-        return formatted;
+        return cleaned + '@c.us';
     }
 
     updateStats() {

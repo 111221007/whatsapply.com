@@ -144,19 +144,6 @@
             background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
         }
         
-        .qr-section {
-            text-align: center;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-        
-        .qr-code {
-            max-width: 250px;
-            margin: 0 auto;
-        }
-        
         .logs {
             height: 300px;
             overflow-y: auto;
@@ -295,24 +282,25 @@
             <p>Automated WhatsApp messaging with built-in safety controls</p>
         </div>
 
-        <!-- QR Code Instructions Banner -->
-        <div id="qr-instructions-banner" class="alert alert-info" style="
+        <!-- Session Instructions Banner -->
+        <div id="session-instructions-banner" class="alert alert-info" style="
             background: white; 
-            color: red; 
+            color: #128c7e; 
             padding: 20px; 
             margin: 0; 
             text-align: center; 
             font-size: 16px; 
             font-weight: bold;
-            border: 2px solid red;
+            border: 2px solid #128c7e;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             display: none;
         ">
             <div style="margin-bottom: 10px;">
-                📱 <span style="font-size: 18px;">Scan QR Code with WhatsApp</span>
+                🤖 <span style="font-size: 18px;">Bot Authentication Required</span>
             </div>
             <div style="font-size: 14px; font-weight: normal; opacity: 0.9;">
-                Open WhatsApp → Settings → Linked Devices → Link a Device
+                The bot needs its own WhatsApp authentication (separate from your browser). 
+                <br>You'll need to scan a QR code with your phone to authenticate the bot.
             </div>
         </div>
         
@@ -324,13 +312,17 @@
                 <span id="wa-status-icon" style="margin-left: 10px;">❌</span>
             </div>
             
-            <!-- Disconnected State: Show connection options -->
+            <!-- Disconnected State: Show bot authentication -->
             <div id="disconnected-controls" class="connection-buttons" style="margin-bottom: 15px;">
-                <button id="wa-connect" class="btn" style="background: #25d366; color: white; margin-right: 10px;">🔗 Connect WhatsApp</button>
-                <button id="wa-get-qr" class="btn" style="background: #128c7e; color: white;">📷 Get QR Code to Connect</button>
-                <p style="margin-top: 10px; color: #666; font-size: 14px;">
-                    💡 <strong>To connect:</strong> Click "Get QR Code" and scan it with your WhatsApp mobile app
-                </p>
+                <div style="padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; text-align: center;">
+                    <p style="margin: 0; color: #856404; font-size: 14px;">
+                        💡 <strong>Bot Authentication Required:</strong> The bot needs its own WhatsApp authentication.
+                        <br>Your existing browser session will remain active.
+                    </p>
+                    <button id="show-qr" class="btn" style="background: #25d366; color: white; margin-top: 10px;">
+                        📱 Show QR Code to Authenticate Bot
+                    </button>
+                </div>
             </div>
             
             <!-- Connected State: Show disconnect option -->
@@ -340,20 +332,23 @@
                     ✅ <strong>Connected!</strong> You can now send messages through this debug interface
                 </p>
             </div>
-            
-            <!-- QR Code Display - Always available when disconnected -->
-            <div id="qr-container" style="display: none; text-align: center; margin-top: 15px; background: white; padding: 20px; border-radius: 8px; border: 2px solid #25d366;">
-                <h5 style="color: #25d366; margin-bottom: 15px;">📱 Scan this QR code with WhatsApp:</h5>
-                <div id="qr-code" style="margin: 15px 0;"></div>
-                <div style="background: #f0f8f0; padding: 10px; border-radius: 5px; margin-top: 15px;">
-                    <p style="color: #128c7e; font-size: 13px; margin: 0;"><strong>📋 Steps:</strong></p>
-                    <p style="color: #666; font-size: 12px; margin: 5px 0;">1. Open WhatsApp on your phone</p>
-                    <p style="color: #666; font-size: 12px; margin: 5px 0;">2. Go to Settings > Linked Devices</p>
-                    <p style="color: #666; font-size: 12px; margin: 5px 0;">3. Tap "Link a Device"</p>
-                    <p style="color: #666; font-size: 12px; margin: 5px 0;">4. Scan this QR code</p>
-                </div>
-                <button id="hide-qr" class="btn btn-secondary" style="margin-top: 15px;">❌ Hide QR Code</button>
+        </div>
+        
+        <!-- QR Code Container - Shows bot authentication QR -->
+        <div id="qr-container" style="display: none; text-align: center; margin-top: 15px; background: white; padding: 20px; border-radius: 8px; border: 2px solid #25d366;">
+            <h5 style="color: #25d366; margin-bottom: 15px;">📱 Scan this QR code to authenticate the bot:</h5>
+            <div id="qr-code" style="margin: 15px 0;"></div>
+            <div style="background: #f0f8f0; padding: 10px; border-radius: 5px; margin-top: 15px;">
+                <p style="color: #128c7e; font-size: 13px; margin: 0;"><strong>📋 Steps:</strong></p>
+                <p style="color: #666; font-size: 12px; margin: 5px 0;">1. Open WhatsApp on your phone</p>
+                <p style="color: #666; font-size: 12px; margin: 5px 0;">2. Go to Settings > Linked Devices</p>
+                <p style="color: #666; font-size: 12px; margin: 5px 0;">3. Tap "Link a Device"</p>
+                <p style="color: #666; font-size: 12px; margin: 5px 0;">4. Scan this QR code</p>
+                <p style="color: #666; font-size: 11px; margin: 10px 0; font-style: italic;">
+                    This creates a separate session for the bot - your browser session will stay active.
+                </p>
             </div>
+            <button id="hide-qr" class="btn btn-secondary" style="margin-top: 15px;">❌ Hide QR Code</button>
         </div>
         
         <div class="status-bar">
@@ -375,11 +370,10 @@
             </div>
         </div>
         
-        <div id="qr-section" class="qr-section" style="display: none;">
-            <h3>📱 Scan QR Code with WhatsApp</h3>
-            <div id="qr-code" class="qr-code"></div>
-            <p>Open WhatsApp → Settings → Linked Devices → Link a Device</p>
-        </div>
+        <!-- QR Code Display -->
+                </div>
+        
+        <div id="alerts"></div>
         
         <div id="alerts"></div>
         
@@ -498,9 +492,7 @@
         let connectionAttempts = 0;
         const maxAttempts = 10;
         
-        // QR Code auto-refresh variables
-        let qrRefreshInterval = null;
-        let qrWindow = null;
+        // Connection monitoring variables
         let connectionCheckInterval = null;
 
         // DOM elements
@@ -508,8 +500,6 @@
         const queueLength = document.getElementById('queue-length');
         const dailyCount = document.getElementById('daily-count');
         const rateCount = document.getElementById('rate-count');
-        const qrSection = document.getElementById('qr-section');
-        const qrCode = document.getElementById('qr-code');
         const messageForm = document.getElementById('message-form');
         const sendBtn = document.getElementById('send-btn');
         const logs = document.getElementById('logs');
@@ -521,6 +511,21 @@
             connectionAttempts = 0;
             addLog('✅ Connected to bot successfully!', 'success');
             showAlert('Connected to bot!', 'success');
+            
+            // Check current bot status immediately after connecting
+            setTimeout(() => {
+                fetch('/api/debug-status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.connection && data.connection.isConnected) {
+                            connected = true;
+                            updateConnectionStatus(true);
+                            sendBtn.disabled = false;
+                            addLog('🔄 Auto-enabled send button - WhatsApp is connected', 'success');
+                        }
+                    })
+                    .catch(error => console.log('Status check failed:', error));
+            }, 1000);
         });
 
         socket.on('disconnect', () => {
@@ -547,12 +552,14 @@
 
         socket.on('qr', (data) => {
             showQRCode(data.qr);
+            updateWhatsAppStatus('connecting'); // Update status to show QR is ready
+            addLog('📱 QR Code received. Scan with WhatsApp to authenticate bot.', 'info');
         });
 
         socket.on('authenticated', () => {
             addLog('✅ WhatsApp authenticated successfully', 'success');
             updateWhatsAppStatus('connecting'); // Show connecting status during authentication
-            hideQRCode();
+            hideQRCode(); // Hide QR code when authenticated
         });
 
         socket.on('session_restore', (data) => {
@@ -561,9 +568,15 @@
             showAlert('Found existing session - attempting to restore connection', 'info');
         });
 
+        socket.on('session_required', (data) => {
+            addLog('� No session found - please open WhatsApp Web in your browser first', 'warning');
+            updateWhatsAppStatus('session_required');
+            showAlert('Bot needs authentication. Click "Show QR Code" button to authenticate the bot.', 'warning');
+        });
+
         socket.on('session_new', (data) => {
-            addLog('🆕 New session required - waiting for QR code...', 'info');
-            updateWhatsAppStatus('new');
+            addLog('🆕 New session required', 'info');
+            updateWhatsAppStatus('session_required');
         });
 
         socket.on('loading', (data) => {
@@ -573,8 +586,8 @@
 
         socket.on('auth_failure', (data) => {
             addLog(`❌ Authentication failed: ${data.message}`, 'error');
-            updateWhatsAppStatus('auth_failed');
-            showAlert('Authentication failed - will need to scan QR code again', 'error');
+            updateWhatsAppStatus('session_required');
+            showAlert('Authentication failed - please refresh WhatsApp Web in your browser', 'error');
         });
 
         socket.on('ready', (data) => {
@@ -589,7 +602,7 @@
         socket.on('disconnected', (data) => {
             connected = false;
             updateConnectionStatus(false);
-            updateWhatsAppStatus('disconnected'); // Update WhatsApp status to disconnected
+            updateWhatsAppStatus('session_required'); // Update WhatsApp status to session required
             addLog(`❌ WhatsApp disconnected: ${data.reason}`, 'error');
             if (data.message) {
                 addLog(`🔄 ${data.message}`, 'info');
@@ -598,9 +611,9 @@
             
             // Provide different messages based on disconnection reason
             if (data.reason === 'LOGOUT') {
-                showAlert('WhatsApp session logged out. Please scan QR code again.', 'warning');
+                showAlert('WhatsApp session logged out. Please refresh WhatsApp Web in your browser.', 'warning');
             } else {
-                showAlert('WhatsApp disconnected. Attempting automatic reconnection...', 'warning');
+                showAlert('WhatsApp disconnected. Please check WhatsApp Web in your browser.', 'warning');
             }
         });
 
@@ -625,7 +638,15 @@
         });
 
         socket.on('status_update', (data) => {
-            addLog(`ℹ️ ${data.message}`, 'info');
+            // Handle initial status when client connects
+            if (data.isConnected !== undefined) {
+                connected = data.isConnected;
+                updateConnectionStatus(connected);
+                sendBtn.disabled = !connected;
+                addLog(`📊 Initial status: Connected=${connected}, Queue=${data.queueLength}, Processing=${data.isProcessing}`, 'info');
+            } else if (data.message) {
+                addLog(`ℹ️ ${data.message}`, 'info');
+            }
         });
 
         socket.on('error', (data) => {
@@ -878,7 +899,7 @@
         console.log('Setting up WhatsApp event handlers...');
         
         const connectBtn = document.getElementById('wa-connect');
-        const qrBtn = document.getElementById('wa-get-qr');
+        const qrBtn = document.getElementById('show-qr');
         const disconnectBtn = document.getElementById('wa-disconnect');
         
         console.log('Connect button found:', connectBtn);
@@ -1036,114 +1057,6 @@
             });
         }
 
-        // Automatic QR Code Management Functions
-        async function autoDisplayQRCode() {
-            try {
-                const response = await fetch('/api/debug-status');
-                const data = await response.json();
-                
-                // Auto-display QR code if disconnected and QR is available
-                if (!data.connection.isConnected && data.connection.qrCode) {
-                    await displayQRCode();
-                    startQRRefresh();
-                    addLog('📷 QR Code auto-displayed (disconnected)', 'info');
-                } else if (data.connection.isConnected) {
-                    stopQRRefresh();
-                    document.getElementById('qr-container').style.display = 'none';
-                    updateWhatsAppStatus('connected');
-                    addLog('✅ WhatsApp is connected!', 'success');
-                }
-                
-                return data.connection;
-            } catch (error) {
-                console.error('Auto QR display error:', error);
-                addLog('⚠️ Could not check connection status', 'warning');
-                return null;
-            }
-        }
-
-        async function displayQRCode() {
-            try {
-                const response = await fetch('/api/qr');
-                const result = await response.json();
-                
-                if (result.success && result.qr) {
-                    document.getElementById('qr-code').innerHTML = `
-                        <img src="${result.qr}" alt="QR Code" style="max-width: 256px; height: auto; border: 2px solid #25d366; border-radius: 8px;">
-                        <div style="margin-top: 10px;">
-                            <button id="open-qr-tab" class="btn btn-secondary" style="margin: 5px;">🔗 Open in New Tab</button>
-                            <span style="font-size: 12px; color: #666; display: block; margin-top: 5px;">
-                                🔄 Auto-refreshing every 30 seconds
-                            </span>
-                        </div>
-                    `;
-                    document.getElementById('qr-container').style.display = 'block';
-                    
-                    // Add event listener for "Open in New Tab" button
-                    const openTabBtn = document.getElementById('open-qr-tab');
-                    if (openTabBtn) {
-                        openTabBtn.addEventListener('click', openQRInNewTab);
-                    }
-                    
-                    return true;
-                } else {
-                    // Try to open in new tab as fallback
-                    openQRInNewTab();
-                    return false;
-                }
-            } catch (error) {
-                console.error('QR display error:', error);
-                openQRInNewTab();
-                return false;
-            }
-        }
-
-        function openQRInNewTab() {
-            try {
-                if (qrWindow && !qrWindow.closed) {
-                    qrWindow.focus();
-                } else {
-                    qrWindow = window.open('/api/qr-tab', 'whatsapp-qr', 'width=500,height=600,scrollbars=yes,resizable=yes');
-                    addLog('📱 QR Code opened in new tab', 'info');
-                }
-            } catch (error) {
-                addLog('❌ Could not open QR code tab: ' + error.message, 'error');
-            }
-        }
-
-        function startQRRefresh() {
-            // Stop any existing refresh
-            stopQRRefresh();
-            
-            // Refresh QR code every 30 seconds
-            qrRefreshInterval = setInterval(async () => {
-                const statusResponse = await fetch('/api/debug-status');
-                const statusData = await statusResponse.json();
-                
-                if (statusData.connection.isConnected) {
-                    stopQRRefresh();
-                    document.getElementById('qr-container').style.display = 'none';
-                    addLog('✅ Connected! Stopped QR refresh.', 'success');
-                } else if (statusData.connection.qrCode) {
-                    await displayQRCode();
-                    addLog('🔄 QR Code refreshed', 'info');
-                }
-            }, 30000);
-            
-            addLog('🔄 Started QR code auto-refresh (30s intervals)', 'info');
-        }
-
-        function stopQRRefresh() {
-            if (qrRefreshInterval) {
-                clearInterval(qrRefreshInterval);
-                qrRefreshInterval = null;
-            }
-            if (qrWindow && !qrWindow.closed) {
-                qrWindow.close();
-                qrWindow = null;
-            }
-        }
-
         // Check connection status periodically
         function startConnectionMonitoring() {
             connectionCheckInterval = setInterval(async () => {
@@ -1154,15 +1067,10 @@
                     // Update status display
                     if (data.connection.isConnected) {
                         updateWhatsAppStatus('connected');
-                        stopQRRefresh();
-                    } else if (data.connection.clientState === 'qr_received') {
-                        updateWhatsAppStatus('connecting');
-                        // Auto-display QR if not already shown
-                        if (document.getElementById('qr-container').style.display === 'none') {
-                            await autoDisplayQRCode();
-                        }
+                    } else if (data.connection.clientState === 'not initialized') {
+                        updateWhatsAppStatus('session_required');
                     } else {
-                        updateWhatsAppStatus('disconnected');
+                        updateWhatsAppStatus('session_required');
                     }
                 } catch (error) {
                     console.error('Connection monitoring error:', error);
@@ -1175,8 +1083,7 @@
             const iconElement = document.getElementById('wa-status-icon');
             const disconnectedControls = document.getElementById('disconnected-controls');
             const connectedControls = document.getElementById('connected-controls');
-            const qrContainer = document.getElementById('qr-container');
-            const qrBanner = document.getElementById('qr-instructions-banner');
+            const sessionBanner = document.getElementById('session-instructions-banner');
 
             switch (status) {
                 case 'connected':
@@ -1185,8 +1092,7 @@
                     iconElement.textContent = '✅';
                     disconnectedControls.style.display = 'none';
                     connectedControls.style.display = 'block';
-                    qrContainer.style.display = 'none';
-                    qrBanner.style.display = 'none'; // Hide QR instructions banner
+                    sessionBanner.style.display = 'none'; // Hide session instructions banner
                     break;
                 case 'restoring':
                     statusElement.textContent = 'Restoring Session...';
@@ -1194,8 +1100,7 @@
                     iconElement.textContent = '🔑';
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
-                    qrContainer.style.display = 'none';
-                    qrBanner.style.display = 'none'; // Don't show QR banner during session restore
+                    sessionBanner.style.display = 'none'; // Don't show session banner during session restore
                     break;
                 case 'loading':
                     statusElement.textContent = 'Loading WhatsApp...';
@@ -1203,26 +1108,15 @@
                     iconElement.textContent = '📱';
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
-                    qrContainer.style.display = 'none';
-                    qrBanner.style.display = 'none'; // Don't show QR banner during loading
+                    sessionBanner.style.display = 'none'; // Don't show session banner during loading
                     break;
-                case 'new':
-                    statusElement.textContent = 'New Session Required';
+                case 'session_required':
+                    statusElement.textContent = 'Session Required';
                     statusElement.style.color = '#f39c12';
-                    iconElement.textContent = '🆕';
+                    iconElement.textContent = '�';
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
-                    qrContainer.style.display = 'none';
-                    qrBanner.style.display = 'block'; // Show QR instructions banner for new session
-                    break;
-                case 'auth_failed':
-                    statusElement.textContent = 'Authentication Failed';
-                    statusElement.style.color = '#e74c3c';
-                    iconElement.textContent = '🚫';
-                    disconnectedControls.style.display = 'block';
-                    connectedControls.style.display = 'none';
-                    qrContainer.style.display = 'none';
-                    qrBanner.style.display = 'block'; // Show QR instructions banner for failed auth
+                    sessionBanner.style.display = 'block'; // Show session instructions banner
                     break;
                 case 'connecting':
                     statusElement.textContent = 'Connecting...';
@@ -1230,8 +1124,7 @@
                     iconElement.textContent = '🔄';
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
-                    qrBanner.style.display = 'block'; // Show QR instructions banner
-                    // QR container visibility handled by user action
+                    sessionBanner.style.display = 'none'; // Hide during connection attempt
                     break;
                 case 'disconnected':
                 default:
@@ -1240,8 +1133,7 @@
                     iconElement.textContent = '❌';
                     disconnectedControls.style.display = 'block';
                     connectedControls.style.display = 'none';
-                    qrContainer.style.display = 'none';
-                    qrBanner.style.display = 'block'; // Show QR instructions banner
+                    sessionBanner.style.display = 'block'; // Show session instructions banner
                     break;
             }
         }
@@ -1279,14 +1171,20 @@
             }
         }
 
+        // QR Code Functions
         function showQRCode(qr) {
-            qrCode.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}" alt="QR Code">`;
-            qrSection.style.display = 'block';
-            addLog('📱 QR Code generated. Please scan with WhatsApp.', 'info');
+            const qrContainer = document.getElementById('qr-container');
+            const qrCodeElement = document.getElementById('qr-code');
+            
+            qrCodeElement.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}" alt="QR Code" style="border: 2px solid #25d366; border-radius: 8px;">`;
+            qrContainer.style.display = 'block';
+            addLog('📱 QR Code generated for bot authentication. Please scan with WhatsApp.', 'info');
         }
 
         function hideQRCode() {
-            qrSection.style.display = 'none';
+            const qrContainer = document.getElementById('qr-container');
+            qrContainer.style.display = 'none';
+            addLog('📱 QR Code hidden', 'info');
         }
 
         function addLog(message, type = 'info') {
@@ -1321,10 +1219,10 @@
         // Initialize
         addLog('🌐 Web interface loaded. Connecting to bot...', 'info');
         
-        // Show QR instructions banner initially (will be hidden if connected)
+        // Show session instructions initially (will be hidden if connected)
         updateWhatsAppStatus('loading');
         
-        // Start connection monitoring and auto QR display
+        // Start connection monitoring
         startConnectionMonitoring();
         
         // Immediate status check instead of waiting 5 seconds
@@ -1335,20 +1233,16 @@
                 
                 if (data.connection.isConnected) {
                     updateWhatsAppStatus('connected');
-                } else if (data.connection.clientState === 'qr_received') {
-                    updateWhatsAppStatus('connecting');
-                    await autoDisplayQRCode();
+                } else if (data.connection.clientState === 'not initialized') {
+                    updateWhatsAppStatus('session_required');
                 } else {
-                    updateWhatsAppStatus('disconnected');
+                    updateWhatsAppStatus('session_required');
                 }
             } catch (error) {
                 console.error('Initial status check error:', error);
-                updateWhatsAppStatus('disconnected');
+                updateWhatsAppStatus('session_required');
             }
         }, 500); // Quick initial check
-        
-        // Initial check for auto QR display
-        setTimeout(autoDisplayQRCode, 2000);
         
         }); // End of DOMContentLoaded event listener
     </script>
