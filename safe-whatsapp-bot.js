@@ -1547,15 +1547,60 @@ class SafeWhatsAppBot {
                         // Convert to string if it's a number
                         phoneNumber = String(phoneNumber);
                         
-                        // Handle Excel scientific notation (e.g., 9.17208E+11)
+                        // Handle Excel scientific notation (e.g., 8.86928E+11, 9.17208E+11)
                         if (phoneNumber.includes('E+') || phoneNumber.includes('e+')) {
                             try {
-                                // Use parseFloat and fix precision issues
-                                const numericValue = parseFloat(phoneNumber);
-                                phoneNumber = numericValue.toFixed(0); // Remove decimal places
+                                console.log(`🔬 [CSV] Scientific notation detected: ${phoneNumber}`);
+                                
+                                // Parse the scientific notation more carefully to avoid precision loss
+                                const parts = phoneNumber.toLowerCase().split('e+');
+                                if (parts.length === 2) {
+                                    const base = parseFloat(parts[0]);
+                                    const exponent = parseInt(parts[1]);
+                                    
+                                    console.log(`🔬 [CSV] Base: ${base}, Exponent: ${exponent}`);
+                                    
+                                    if (exponent === 11) {
+                                        // This is a 12-digit number in scientific notation
+                                        // 8.86928E+11 should become 886928000000 (then we add 91 prefix)
+                                        // 9.17208E+11 should become 917208000000 (already has 91 prefix)
+                                        
+                                        // Convert manually to avoid floating point precision issues
+                                        const baseStr = base.toString();
+                                        const decimalIndex = baseStr.indexOf('.');
+                                        
+                                        if (decimalIndex !== -1) {
+                                            // Remove decimal and pad with zeros
+                                            const beforeDecimal = baseStr.substring(0, decimalIndex);
+                                            const afterDecimal = baseStr.substring(decimalIndex + 1);
+                                            
+                                            // Calculate how many zeros we need
+                                            const totalDigits = 12; // E+11 means 12 digits total
+                                            const currentDigits = beforeDecimal.length + afterDecimal.length;
+                                            const zerosNeeded = totalDigits - currentDigits;
+                                            
+                                            phoneNumber = beforeDecimal + afterDecimal + '0'.repeat(Math.max(0, zerosNeeded));
+                                        } else {
+                                            // No decimal, just add 11 zeros
+                                            phoneNumber = baseStr + '0'.repeat(11);
+                                        }
+                                        
+                                        console.log(`✅ [CSV] Converted E+11: ${parts[0]}E+11 → ${phoneNumber}`);
+                                    } else {
+                                        // Fallback to regular parsing
+                                        const numericValue = parseFloat(phoneNumber);
+                                        phoneNumber = numericValue.toFixed(0);
+                                        console.log(`⚠️ [CSV] Fallback conversion for E+${exponent}: ${phoneNumber}`);
+                                    }
+                                } else {
+                                    // Fallback parsing
+                                    const numericValue = parseFloat(phoneNumber);
+                                    phoneNumber = numericValue.toFixed(0);
+                                    console.log(`⚠️ [CSV] Fallback scientific notation parsing: ${phoneNumber}`);
+                                }
                             } catch (e) {
-                                console.warn(`⚠️ [CSV] Could not parse scientific notation: ${phoneNumber}`);
-                                phoneNumber = phoneNumber.replace(/E\+\d+/gi, ''); // Fallback
+                                console.warn(`⚠️ [CSV] Could not parse scientific notation: ${phoneNumber}`, e);
+                                phoneNumber = phoneNumber.replace(/E\+\d+/gi, '000000'); // Fallback
                             }
                         }
                         
@@ -1582,15 +1627,38 @@ class SafeWhatsAppBot {
                         if (cleaned.length === 10) {
                             // Standard Indian 10-digit number, add country code
                             phoneNumber = '91' + cleaned;
-                            console.log(`✅ [CSV] Indian 10-digit number detected: ${cleaned} -> ${phoneNumber}`);
+                            console.log(`✅ [CSV] Indian 10-digit number detected: ${cleaned} → ${phoneNumber}`);
                         } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
                             // Remove leading 0 and add country code (old format)
                             phoneNumber = '91' + cleaned.substring(1);
-                            console.log(`✅ [CSV] Indian number with leading 0: ${cleaned} -> ${phoneNumber}`);
-                        } else if (cleaned.length === 12 && cleaned.startsWith('91')) {
-                            // Already has 91 country code
-                            phoneNumber = cleaned;
-                            console.log(`✅ [CSV] Indian number with country code: ${phoneNumber}`);
+                            console.log(`✅ [CSV] Indian number with leading 0: ${cleaned} → ${phoneNumber}`);
+                        } else if (cleaned.length === 12) {
+                            // 12 digits - check if it needs 91 prefix
+                            if (cleaned.startsWith('91')) {
+                                // Already has 91 country code
+                                phoneNumber = cleaned;
+                                console.log(`✅ [CSV] Indian number with country code: ${phoneNumber}`);
+                            } else {
+                                // 12 digits but doesn't start with 91
+                                // This could be a number like 886928000000 that should be 919186928000
+                                // Check if it's likely a truncated Indian number
+                                if (cleaned.match(/^[6-9]\d{9}$/) || cleaned.match(/^[89]\d{8}000000$/)) {
+                                    // Looks like a 10-digit Indian number with trailing zeros, add 91
+                                    const coreNumber = cleaned.replace(/0{6}$/, ''); // Remove trailing zeros
+                                    if (coreNumber.length === 6) {
+                                        // 6 digits + 000000 - likely truncated, needs reconstruction
+                                        console.log(`🔧 [CSV] Detected truncated number pattern: ${cleaned}`);
+                                        phoneNumber = '91' + cleaned; // Keep as is but add 91
+                                    } else {
+                                        phoneNumber = '91' + cleaned.substring(2); // Take last 10 digits
+                                    }
+                                } else {
+                                    // Take last 10 digits and add 91 prefix
+                                    const last10 = cleaned.substring(cleaned.length - 10);
+                                    phoneNumber = '91' + last10;
+                                }
+                                console.log(`✅ [CSV] 12-digit number processed: ${cleaned} → ${phoneNumber}`);
+                            }
                         } else if (cleaned.length >= 11 && cleaned.length <= 15) {
                             // Other country codes or international numbers
                             phoneNumber = cleaned;
@@ -1600,7 +1668,10 @@ class SafeWhatsAppBot {
                             phoneNumber = ''; // Skip invalid numbers
                         } else {
                             console.warn(`⚠️ [CSV] Phone number too long (${cleaned.length} digits): ${cleaned}`);
-                            phoneNumber = ''; // Skip invalid numbers
+                            // Take last 10 digits and add 91 prefix for very long numbers
+                            const last10 = cleaned.substring(cleaned.length - 10);
+                            phoneNumber = '91' + last10;
+                            console.log(`✅ [CSV] Long number truncated: ${cleaned} → ${phoneNumber}`);
                         }
                         
                         // Final validation for Indian numbers specifically
