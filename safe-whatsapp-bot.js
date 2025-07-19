@@ -1542,30 +1542,91 @@ class SafeWhatsAppBot {
                     let phoneNumber = row['PhoneNumber'] || row['phonenumber'] || row['PHONENUMBER'] || 
                                     row['Phone'] || row['phone'] || row['PHONE'] || '';
                     
-                    // Handle Excel scientific notation (e.g., 9.17208E+11)
-                    if (phoneNumber && typeof phoneNumber === 'string') {
-                        // Convert scientific notation to regular number
+                    // Handle Excel scientific notation and numeric values
+                    if (phoneNumber !== '') {
+                        // Convert to string if it's a number
+                        phoneNumber = String(phoneNumber);
+                        
+                        // Handle Excel scientific notation (e.g., 9.17208E+11)
                         if (phoneNumber.includes('E+') || phoneNumber.includes('e+')) {
-                            phoneNumber = parseFloat(phoneNumber).toString();
+                            try {
+                                // Use parseFloat and fix precision issues
+                                const numericValue = parseFloat(phoneNumber);
+                                phoneNumber = numericValue.toFixed(0); // Remove decimal places
+                            } catch (e) {
+                                console.warn(`⚠️ [CSV] Could not parse scientific notation: ${phoneNumber}`);
+                                phoneNumber = phoneNumber.replace(/E\+\d+/gi, ''); // Fallback
+                            }
                         }
                         
-                        // Remove any decimal points that might be left
-                        phoneNumber = phoneNumber.replace(/\./g, '');
+                        console.log(`📱 [CSV] Processing phone number: "${phoneNumber}"`);
                         
-                        // Clean and format the number
-                        phoneNumber = phoneNumber.replace(/\D/g, ''); // Remove non-digits
+                        // Handle Indian number formats specifically
+                        // Remove all spaces, dashes, brackets, and other non-digit chars except +
+                        let cleaned = phoneNumber.replace(/[\s\-\(\)\[\]\.]/g, '');
                         
-                        // Add country code if missing (assuming India +91)
-                        if (phoneNumber.length === 10) {
-                            phoneNumber = '91' + phoneNumber;
+                        // Handle +91 prefix (with or without spaces)
+                        if (cleaned.startsWith('+91')) {
+                            cleaned = cleaned.substring(3); // Remove +91
+                        } else if (cleaned.startsWith('91')) {
+                            cleaned = cleaned.substring(2); // Remove 91
+                        } else if (cleaned.startsWith('+')) {
+                            // Other country code with +, remove the +
+                            cleaned = cleaned.substring(1);
+                        }
+                        
+                        // Now ensure we have only digits
+                        cleaned = cleaned.replace(/\D/g, '');
+                        
+                        // Handle Indian number validation and formatting
+                        if (cleaned.length === 10) {
+                            // Standard Indian 10-digit number, add country code
+                            phoneNumber = '91' + cleaned;
+                            console.log(`✅ [CSV] Indian 10-digit number detected: ${cleaned} -> ${phoneNumber}`);
+                        } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+                            // Remove leading 0 and add country code (old format)
+                            phoneNumber = '91' + cleaned.substring(1);
+                            console.log(`✅ [CSV] Indian number with leading 0: ${cleaned} -> ${phoneNumber}`);
+                        } else if (cleaned.length === 12 && cleaned.startsWith('91')) {
+                            // Already has 91 country code
+                            phoneNumber = cleaned;
+                            console.log(`✅ [CSV] Indian number with country code: ${phoneNumber}`);
+                        } else if (cleaned.length >= 11 && cleaned.length <= 15) {
+                            // Other country codes or international numbers
+                            phoneNumber = cleaned;
+                            console.log(`✅ [CSV] International number: ${phoneNumber}`);
+                        } else if (cleaned.length < 10) {
+                            console.warn(`⚠️ [CSV] Phone number too short (${cleaned.length} digits): ${cleaned}`);
+                            phoneNumber = ''; // Skip invalid numbers
+                        } else {
+                            console.warn(`⚠️ [CSV] Phone number too long (${cleaned.length} digits): ${cleaned}`);
+                            phoneNumber = ''; // Skip invalid numbers
+                        }
+                        
+                        // Final validation for Indian numbers specifically
+                        if (phoneNumber && phoneNumber.startsWith('91')) {
+                            // Indian number should be exactly 12 digits (91 + 10 digits)
+                            if (phoneNumber.length !== 12) {
+                                console.warn(`⚠️ [CSV] Invalid Indian number length: ${phoneNumber} (expected 12 digits)`);
+                                phoneNumber = '';
+                            } else {
+                                console.log(`✅ [CSV] Valid Indian number: ${phoneNumber}`);
+                            }
+                        } else if (phoneNumber && (phoneNumber.length < 10 || phoneNumber.length > 15)) {
+                            console.warn(`⚠️ [CSV] Invalid phone number length: ${phoneNumber} (${phoneNumber.length} digits)`);
+                            phoneNumber = '';
                         }
                     }
                     
-                    if (name && phoneNumber) {
+                    // Only add contact if both name and valid phone number exist
+                    if (name && phoneNumber && phoneNumber.length >= 10) {
                         contacts.push({
-                            Name: name,
+                            Name: name.trim(),
                             PhoneNumber: phoneNumber
                         });
+                        console.log(`✅ [CSV] Added contact: ${name.trim()} -> ${phoneNumber}`);
+                    } else if (name) {
+                        console.warn(`⚠️ [CSV] Skipping contact with invalid phone: ${name} -> ${phoneNumber || 'empty'}`);
                     }
                 })
                 .on('end', () => {
@@ -1626,16 +1687,61 @@ class SafeWhatsAppBot {
             return null;
         }
         
-        // Remove all non-numeric characters
-        const cleaned = number.replace(/\D/g, '');
+        console.log(`📱 [FORMAT] Processing number: "${number}"`);
         
-        // Basic validation
-        if (cleaned.length < 10 || cleaned.length > 15) {
+        // Handle Indian number formats specifically
+        // Remove all spaces, dashes, brackets, and other non-digit chars except +
+        let cleaned = number.replace(/[\s\-\(\)\[\]\.]/g, '');
+        
+        // Handle +91 prefix (with or without spaces)
+        if (cleaned.startsWith('+91')) {
+            cleaned = cleaned.substring(3); // Remove +91
+        } else if (cleaned.startsWith('91')) {
+            cleaned = cleaned.substring(2); // Remove 91
+        } else if (cleaned.startsWith('+')) {
+            // Other country code with +, remove the +
+            cleaned = cleaned.substring(1);
+        }
+        
+        // Now ensure we have only digits
+        cleaned = cleaned.replace(/\D/g, '');
+        
+        // Handle Indian number validation and formatting
+        let finalNumber;
+        if (cleaned.length === 10) {
+            // Standard Indian 10-digit number, add country code
+            finalNumber = '91' + cleaned;
+            console.log(`✅ [FORMAT] Indian 10-digit number: ${cleaned} -> ${finalNumber}`);
+        } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+            // Remove leading 0 and add country code (old format)
+            finalNumber = '91' + cleaned.substring(1);
+            console.log(`✅ [FORMAT] Indian number with leading 0: ${cleaned} -> ${finalNumber}`);
+        } else if (cleaned.length === 12 && cleaned.startsWith('91')) {
+            // Already has 91 country code
+            finalNumber = cleaned;
+            console.log(`✅ [FORMAT] Indian number with country code: ${finalNumber}`);
+        } else if (cleaned.length >= 11 && cleaned.length <= 15) {
+            // Other country codes or international numbers
+            finalNumber = cleaned;
+            console.log(`✅ [FORMAT] International number: ${finalNumber}`);
+        } else {
             console.error(`❌ [FORMAT] Invalid phone number length: ${cleaned.length} digits for number: ${cleaned}`);
             return null;
         }
         
-        const formatted = cleaned + '@c.us';
+        // Final validation for Indian numbers specifically
+        if (finalNumber.startsWith('91')) {
+            // Indian number should be exactly 12 digits (91 + 10 digits)
+            if (finalNumber.length !== 12) {
+                console.error(`❌ [FORMAT] Invalid Indian number length: ${finalNumber} (expected 12 digits)`);
+                return null;
+            }
+        } else if (finalNumber.length < 10 || finalNumber.length > 15) {
+            console.error(`❌ [FORMAT] Invalid phone number length: ${finalNumber.length} digits for number: ${finalNumber}`);
+            return null;
+        }
+        
+        const formatted = finalNumber + '@c.us';
         console.log(`✅ [FORMAT] Successfully formatted: ${number} -> ${formatted}`);
         return formatted;
     }
