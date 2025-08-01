@@ -22,7 +22,7 @@
     "mime": "^3.0.0",
     "mongoose": "^6.2.0",
     "multer": "^2.0.2",
-    "node-fetch": "^2.6.7",
+    "node-fetch": "^3.3.2",
     "node-webpmux": "^3.2.1",
     "puppeteer": "^24.14.0",
     "qrcode": "^1.5.4",
